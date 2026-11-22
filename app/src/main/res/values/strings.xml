@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">S Cache Cleaner</string>
+    <string name="tagline">Smart storage • Safe cleaning</string>
+    <string name="privacy">NO ADS · NO TRACKING</string>
+    <string name="storage_title">Device storage</string>
+    <string name="free">Free</string>
+    <string name="used">Used</string>
+    <string name="cache_title">Safe quick clean</string>
+    <string name="cache_description">Only cleans temporary files belonging to S Cache Cleaner. Photos, chats and personal files are not deleted.</string>
+    <string name="cache_size">App cache: %1$s</string>
+    <string name="clean_now">Clean app cache</string>
+    <string name="cleaning">Cleaning…</string>
+    <string name="cleaned">Deleted %1$s from this app’s cache.</string>
+    <string name="nothing_to_clean">This app has no temporary files to clean.</string>
+    <string name="other_apps">Other apps’ cache</string>
+    <string name="other_apps_desc">Select an app to open its official Android settings. Go to Storage &amp; cache → Clear cache.</string>
+    <string name="browse_apps">Browse installed apps</string>
+    <string name="tools_title">Storage tools</string>
+    <string name="storage_settings">Open storage manager</string>
+    <string name="downloads">Review downloads</string>
+    <string name="safety_title">Your files are protected</string>
+    <string name="safety_desc">Android does not allow normal apps to clear all other apps’ caches silently. Other apps must be cleaned from Android settings.</string>
+    <string name="compatibility">Android 6.0+ • Features depend on the device.</string>
+    <string name="apps_title">Installed apps</string>
+    <string name="search_apps">Search by app name</string>
+    <string name="apps_help">Tap an app, choose Storage &amp; cache, then Clear cache. Never choose Clear storage unless you want to reset the app.</string>
+    <string name="apps_count">%1$d apps</string>
+    <string name="error_settings">Could not open Android settings on this device.</string>
+    <string name="empty_apps">No apps found</string>
+</resources>
