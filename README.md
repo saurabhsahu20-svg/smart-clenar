@@ -1,24 +1,18 @@
-# S Cleaner v2.0.0
+# S Cleaner 2.1.0 — Shared Storage & System Cache Update
 
-Premium native Android storage assistant, Android 6.0+ and target SDK 36.
+## What changed
+- **Scan shared storage**: with optional, explicitly approved Android **All files access** permission, S Cleaner can scan the accessible files in primary shared storage — including PDFs, archives, downloads, images, music and videos — for potential junk, duplicates and large files. It does **not** access Android-protected private app folders or claim to scan them.
+- **Single-folder privacy alternative**: select a permitted folder using the Android document picker without broad file access.
+- **Correct cache feedback**: one-tap app cleanup only removes **S Cleaner's own cache** and labels it accordingly; no misleading "your entire device is clean" status.
+- **System external cache cleanup**: Android 11+ exposes an optional system-provided confirmation dialog through `StorageManager.ACTION_CLEAR_APP_CACHE` (requires All files access). This can clear *external cache directories* of apps **after the user's Android confirmation**. If the device doesn't offer this dialog, the app opens manual App Manager shortcuts. It does not clear every app's private/internal cache.
+- **Manual file deletion**: zero files selected automatically, explicit review and confirmation before any user file deletion.
+- **Scan is local and bounded**: at most 70,000 accessible files, 12,000 directories, depth 28 for the primary device scan; the interface shows "Partial scan" when limits are hit. Hash-based duplicate detection is bounded to avoid excessive data/battery use.
 
-## Features
-- Dark blue + mint **premium dashboard**, animated 3D-inspired storage ring, dark/light toggle, responsive two-column tool cards.
-- One-tap **safe cleanup** removes only S Cleaner's own temporary cache.
-- **Junk file review, large files, duplicate finder, file categories and storage analysis** work only inside a folder chosen via Android's system folder picker (Storage Access Framework, SAF).
-- **Duplicate detection** verifies contents using SHA-256, compares only size matches, and keeps an original file untouched by default.
-- Explicit multi-selection and a separate confirmation dialog are always required before deleting **any personal or shared file**. Deletion cannot be undone.
-- App Manager lists discoverable launchable apps and opens Android's own per-app cache screen.
-- Downloads and system storage manager shortcuts.
-- Foreground-only storage monitoring, no persistent background service.
-- No ads, internet access, analytics, broad file permission, QUERY_ALL_PACKAGES, accessibility permissions, or root.
+## Storage access limitations
+Android 11+ blocks private locations such as other apps' `Android/data` directories even with All files access. On older Android versions, storage permissions and the availability of files vary by API level/OEM. System app caches and Android OS caches are **not** comprehensively cleared. No root, accessibility abuse, hidden deletion or device compromise.
 
-## Important limitations
-Android cannot grant this app unrestricted access to other applications' private cache folders. One-tap cleaning therefore **does not** clear cache from other apps. Use App Manager to open official system App Info and select 'Storage & cache → Clear cache'.
+## Privacy
+There is no internet permission, analytics or upload. All results remain on device. Storage permission can be revoked in Android Settings. This release includes `MANAGE_EXTERNAL_STORAGE`, a **sensitive restricted permission**. Google Play requires a **permission declaration and approval** for eligible file-management use; it is not automatically Play Store approved. A release-signed AAB, real device tests, Data safety answers and store review are required before publishing.
 
-On Android 11 and newer, Android's system picker blocks selecting some roots, including the top-level internal storage root and top-level Downloads. Choose a permitted subfolder instead. Scans are bounded (up to 5,000 entries, 12 levels deep); when the limit is reached the UI says results are partial. Duplicates are content-hashed only when eligible within scan budgets. No false 'everything clean' claims.
-
-## Build
-GitHub Actions → Build S Cleaner Android APK → a successful run → Artifacts → S-Cleaner-v2-Debug-APK. The downloaded artifact ZIP contains app-debug.apk.
-
-For Google Play, build and sign a **release AAB with a secure signing key**, complete Data safety and store listing / privacy policy, and perform device tests, accessibility testing and Play Console review. This repo's workflow creates a debug APK for testing; it is **not a published Play Store release**.
+## Build test APK
+GitHub Actions → `Build S Cleaner Android APK` → successful run → `S-Cleaner-v2.1-Debug-APK` artifact ZIP → extract APK. Android SDK 36, Java 17. The build artifact is for device testing, not a signed public release.

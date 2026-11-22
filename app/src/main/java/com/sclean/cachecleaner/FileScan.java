@@ -38,14 +38,20 @@ final class FileScan {
 
     static final class Entry {
         final Uri uri;
+        final java.io.File localFile; // Optional shared-storage file, permission-checked before deletion.
         final String name;
         final String location;
         final String mime;
         final long bytes;
         final boolean deletable;
         Entry(Uri uri, String name, String location, String mime, long bytes, boolean deletable) {
-            this.uri=uri; this.name=name; this.location=location;
+            this.uri=uri; this.localFile=null; this.name=name; this.location=location;
             this.mime=mime; this.bytes=bytes; this.deletable=deletable;
+        }
+        Entry(java.io.File file, String path, long bytes) {
+            this.uri=Uri.fromFile(file); this.localFile=file;
+            this.name=file.getName(); this.location=path;
+            this.mime=null; this.bytes=bytes; this.deletable=true;
         }
     }
 
@@ -139,7 +145,7 @@ final class FileScan {
         return output;
     }
 
-    private static boolean isJunk(String filename) {
+    static boolean isJunk(String filename) {
         String lower=filename.toLowerCase(Locale.ROOT);
         return lower.endsWith(".tmp") || lower.endsWith(".temp")
                 || lower.endsWith(".bak") || lower.endsWith(".old")
@@ -165,7 +171,7 @@ final class FileScan {
         return false;
     }
 
-    private static void findDuplicates(ContentResolver resolver, Result result) {
+    static void findDuplicates(ContentResolver resolver, Result result) {
         Map<Long,List<Entry>> sameSize=new HashMap<>();
         for (Entry e:result.all) {
             if (e.bytes>0) {
@@ -187,7 +193,7 @@ final class FileScan {
                 }
                 hashed+=e.bytes;
                 try {
-                    String signature=sha256(resolver,e.uri);
+                    String signature=sha256(resolver,e);
                     if(signature!=null && keepOne.containsKey(signature)) {
                         result.duplicates.add(e);
                         result.duplicateBytes+=e.bytes;
@@ -199,11 +205,11 @@ final class FileScan {
         }
     }
 
-    private static String sha256(ContentResolver resolver,Uri uri) throws Exception {
+    private static String sha256(ContentResolver resolver,Entry entry) throws Exception {
         MessageDigest digest=MessageDigest.getInstance("SHA-256");
         byte[] buffer=new byte[65536];
         long seen=0;
-        try(InputStream stream=resolver.openInputStream(uri)) {
+        try(InputStream stream=entry.localFile!=null ? new java.io.FileInputStream(entry.localFile) : resolver.openInputStream(entry.uri)) {
             if(stream==null) return null;
             try(BufferedInputStream in=new BufferedInputStream(stream,65536)) {
                 int count;
@@ -226,7 +232,31 @@ final class FileScan {
         long bytes=0L;
         for(Entry e: entries) {
             try {
-                if (e.deletable && DocumentsContract.deleteDocument(context.getContentResolver(),e.uri)) {
+                boolean removed=false;
+                if(e.localFile!=null) {
+                    // The MANAGE_EXTERNAL_STORAGE permission is user-controlled and can be revoked.
+                    if(android.os.Build.VERSION.SDK_INT>=30 &&
+                            !android.os.Environment.isExternalStorageManager()) {
+                        failures++; continue;
+                    }
+                    java.io.File f=e.localFile;
+                    java.io.File root=android.os.Environment.getExternalStorageDirectory();
+                    String canonicalRoot=root.getCanonicalPath()+java.io.File.separator;
+                    String canonical=f.getCanonicalPath();
+                    String normalized=f.getAbsolutePath();
+                    // No traversal/symlink escape, app-private Android folders, or directories.
+                    String relative=canonical.startsWith(canonicalRoot)?
+                            canonical.substring(canonicalRoot.length()):"";
+                    String safe=relative.replace('\\','/');
+                    if(!relative.isEmpty() && canonical.equals(normalized) &&
+                            !safe.equals("Android") && !safe.startsWith("Android/data/") &&
+                            !safe.startsWith("Android/obb/") && f.isFile()) {
+                        removed=f.delete();
+                    }
+                } else if(e.deletable) {
+                    removed=DocumentsContract.deleteDocument(context.getContentResolver(),e.uri);
+                }
+                if(removed) {
                     successes++;
                     bytes+=Math.max(0L,e.bytes);
                 } else failures++;

@@ -1,6 +1,11 @@
 package com.sclean.cachecleaner;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Environment;
 import android.app.DownloadManager;
 import android.content.Intent;
 import android.graphics.Color;
@@ -30,6 +35,10 @@ public final class MainActivity extends Activity {
     private TextView storageCaption, available, occupied, cacheLabel, cleanBtn, monitorText;
     private boolean cleanupBusy=false;
     private boolean active=false;
+    private static final int LEGACY_FILES_PERMISSION=108;
+    private static final int SYSTEM_CACHE_REQUEST=109;
+    private boolean launchFullScanAfterSettings=false;
+    private boolean launchSystemCacheAfterSettings=false;
     private final Runnable monitor=new Runnable() {
         @Override public void run() {
             if(!active)return;
@@ -75,7 +84,9 @@ public final class MainActivity extends Activity {
         hero(page);
         STheme.space(this,page,18);
         action(page);
-        STheme.space(this,page,29);
+        STheme.space(this,page,14);
+        fullStorageAction(page);
+        STheme.space(this,page,25);
 
         LinearLayout heading=STheme.row(this);
         TextView label=STheme.text(this,"Cleaning toolkit",21,STheme.text(this),true);
@@ -87,8 +98,8 @@ public final class MainActivity extends Activity {
                 13,STheme.secondary(this),false));
         STheme.space(this,page,14);
 
-        toolRow(page,"clean","Smart Cache","App cache shortcuts",
-                ()->startActivity(new Intent(this,AppsActivity.class)),
+        toolRow(page,"clean","System Cache","Android confirmation",
+                this::openSystemCache,
                 "junk","Junk Files","Review potential junk",
                 ()->openReview(ReviewActivity.JUNK));
         toolRow(page,"dupes","Duplicates","Content-verified",
@@ -132,15 +143,15 @@ public final class MainActivity extends Activity {
         privacy.addView(privacyHeading);
         STheme.space(this,privacy,8);
         privacy.addView(STheme.text(this,
-                "No ads, no tracking and no all-files access. File tools scan only folders that you explicitly select. You choose each file before deletion.",
+                "No ads and no tracking. Optional All files access scans shared storage only. You select each file and confirm deletion.",
                 13,STheme.secondary(this),false));
         STheme.space(this,privacy,9);
         privacy.addView(STheme.text(this,
-                "Android limits access to other apps' private caches. Use Smart Cache to open official Android app settings.",
+                "Private app folders remain protected. The system cache tool requests Android's confirmation, while App Manager opens individual app Settings.",
                 12,STheme.secondary(this),false));
         page.addView(privacy);
         STheme.space(this,page,19);
-        TextView footer=STheme.text(this,"S CLEANER  •  VERSION 2.0  •  MADE FOR ANDROID",
+        TextView footer=STheme.text(this,"S CLEANER  •  VERSION 2.1  •  MADE FOR ANDROID",
                 11,STheme.secondary(this),true);
         footer.setGravity(Gravity.CENTER);
         page.addView(footer);
@@ -220,21 +231,138 @@ public final class MainActivity extends Activity {
         LinearLayout row=STheme.row(this);
         TextView symbol=STheme.text(this,"✦",22,STheme.MINT,true);
         row.addView(symbol);
-        TextView title=STheme.text(this,"  One-Tap Safe Cleanup",17,STheme.text(this),true);
+        TextView title=STheme.text(this,"  Safe Cache Cleanup",17,STheme.text(this),true);
         row.addView(title,new LinearLayout.LayoutParams(0,-2,1));
         card.addView(row);
         STheme.space(this,card,7);
         card.addView(STheme.text(this,
-                "Instantly remove S Cleaner's temporary cache. Personal files are never included.",
+                "Clear S Cleaner's own temporary cache below. Use Android's system confirmation to clear supported external caches from other apps.",
                 13,STheme.secondary(this),false));
         STheme.space(this,card,11);
-        cacheLabel=STheme.text(this,"App cache: checking…",13,STheme.MINT,true);
+        cacheLabel=STheme.text(this,"S Cleaner cache: checking…",13,STheme.MINT,true);
         card.addView(cacheLabel);
         STheme.space(this,card,14);
-        cleanBtn=STheme.pill(this,"✦   CLEAN SAFELY",true);
+        cleanBtn=STheme.pill(this,"✦   CLEAR S CLEANER CACHE",true);
         card.addView(cleanBtn);
         cleanBtn.setOnClickListener(v->cleanOwn());
+        STheme.space(this,card,11);
+        TextView system=STheme.pill(this,"◎   CLEAR SYSTEM EXTERNAL CACHES",false);
+        card.addView(system);
+        system.setOnClickListener(v->openSystemCache());
         parent.addView(card);
+    }
+
+
+    private void fullStorageAction(LinearLayout page) {
+        LinearLayout box=STheme.panel(this);
+        box.addView(STheme.text(this,"◎  SCAN DEVICE STORAGE",17,STheme.text(this),true));
+        STheme.space(this,box,8);
+        box.addView(STheme.text(this,
+                "Scan accessible files in shared storage for junk, duplicates and large files. Private app folders remain protected. Nothing is deleted automatically.",
+                13,STheme.secondary(this),false));
+        STheme.space(this,box,12);
+        TextView start=STheme.pill(this,"SCAN SHARED FILES",true);
+        box.addView(start);
+        start.setOnClickListener(v->openFullStorageScan());
+        STheme.space(this,box,7);
+        TextView alternative=STheme.text(this,"Or select a folder (no broad permission)",
+                12,STheme.MINT,true);
+        alternative.setPadding(0,STheme.dp(this,8),0,STheme.dp(this,8));
+        alternative.setOnClickListener(v->openReview(ReviewActivity.ANALYZE,false));
+        box.addView(alternative);
+        page.addView(box);
+    }
+
+    private boolean hasAllFileAccess() {
+        if(Build.VERSION.SDK_INT>=30) return Environment.isExternalStorageManager();
+        if(Build.VERSION.SDK_INT>=23) return checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
+                ==PackageManager.PERMISSION_GRANTED;
+        return true;
+    }
+
+    private void openFullStorageScan() {
+        if(hasAllFileAccess()) openReview(ReviewActivity.ANALYZE,true);
+        else askStoragePermission(false);
+    }
+
+    private void openSystemCache() {
+        if(Build.VERSION.SDK_INT<30) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Clear other apps' cache")
+                    .setMessage("This Android version does not support the system-wide external cache confirmation screen. Open App Manager and clear cache for each app from Settings.")
+                    .setNegativeButton("Cancel",null)
+                    .setPositiveButton("App Manager",(d,w)->
+                            startActivity(new Intent(this,AppsActivity.class)))
+                    .show();
+            return;
+        }
+        if(!hasAllFileAccess()) { askStoragePermission(true); return; }
+        try {
+            Intent intent=new Intent(StorageManager.ACTION_CLEAR_APP_CACHE);
+            startActivityForResult(intent,SYSTEM_CACHE_REQUEST);
+        } catch(RuntimeException e) {
+            new AlertDialog.Builder(this)
+                    .setTitle("System cache screen unavailable")
+                    .setMessage("This device has not provided the external-cache cleanup dialog. Clear apps individually in Android Settings.")
+                    .setPositiveButton("App Manager",(d,w)->
+                            startActivity(new Intent(this,AppsActivity.class)))
+                    .setNegativeButton("Cancel",null).show();
+        }
+    }
+
+    private void askStoragePermission(boolean forSystemCache) {
+        new AlertDialog.Builder(this)
+                .setTitle("Optional storage access")
+                .setMessage(forSystemCache
+                        ? "Android requires All files access to open its external app-cache cleanup confirmation. It does not delete private app data automatically. Grant only if you are comfortable."
+                        : "Scanning shared files across the device needs optional All files access. Files stay on this device; no personal files are deleted without choosing them and confirming. Private app folders remain protected. You can select a single folder instead.")
+                .setNegativeButton("Not now",null)
+                .setNeutralButton("Choose folder",(d,w)->openReview(ReviewActivity.ANALYZE,false))
+                .setPositiveButton("Open Android permissions",(d,w)->{
+                    launchFullScanAfterSettings=!forSystemCache;
+                    launchSystemCacheAfterSettings=forSystemCache;
+                    if(Build.VERSION.SDK_INT>=30) {
+                        try {
+                            Intent settings=new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                    Uri.parse("package:"+getPackageName()));
+                            startActivity(settings);
+                        } catch(RuntimeException error) {
+                            try{startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));}
+                            catch(RuntimeException ignored) {
+                                launchFullScanAfterSettings=false;
+                                launchSystemCacheAfterSettings=false;
+                                Toast.makeText(this,"Storage access settings unavailable",Toast.LENGTH_LONG).show();
+                            }
+                        }
+                    } else if(Build.VERSION.SDK_INT>=23) {
+                        requestPermissions(new String[]{
+                                Manifest.permission.READ_EXTERNAL_STORAGE,
+                                Manifest.permission.WRITE_EXTERNAL_STORAGE
+                        },LEGACY_FILES_PERMISSION);
+                    }
+                }).show();
+    }
+
+    @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results) {
+        super.onRequestPermissionsResult(code,permissions,results);
+        if(code==LEGACY_FILES_PERMISSION) {
+            if(hasAllFileAccess()) {
+                if(launchSystemCacheAfterSettings)openSystemCache();
+                else if(launchFullScanAfterSettings)openReview(ReviewActivity.ANALYZE,true);
+            } else Toast.makeText(this,"Permission denied; use Choose folder instead.",Toast.LENGTH_LONG).show();
+            launchFullScanAfterSettings=false;
+            launchSystemCacheAfterSettings=false;
+        }
+    }
+
+    @Override protected void onActivityResult(int request,int result,Intent intent) {
+        super.onActivityResult(request,result,intent);
+        if(request==SYSTEM_CACHE_REQUEST) {
+            if(result==RESULT_OK) Toast.makeText(this,
+                    "Android confirmed external app caches cleaned",Toast.LENGTH_LONG).show();
+            else Toast.makeText(this,"External cache cleanup not completed",Toast.LENGTH_SHORT).show();
+            updateUsage();
+        }
     }
 
     private void toolRow(LinearLayout page, String i1,String t1,String s1,Runnable a1,
@@ -303,7 +431,7 @@ public final class MainActivity extends Activity {
             long bytes=CacheTools.scanOrClean(getApplicationContext(),false);
             ui.post(()->{
                 if(!isFinishing()&&!isDestroyed()&&!cleanupBusy&&cacheLabel!=null)
-                    cacheLabel.setText("App cache: "+Formatter.formatFileSize(this,bytes));
+                    cacheLabel.setText("S Cleaner cache: "+Formatter.formatFileSize(this,bytes));
             });
         });
     }
@@ -323,15 +451,20 @@ public final class MainActivity extends Activity {
                 cleanBtn.setText("✦   CLEAN SAFELY");
                 Toast.makeText(this,cleared>0
                         ? "Safe cleanup: "+Formatter.formatFileSize(this,cleared)+" freed"
-                        : "Already clear — no temporary cache to remove",Toast.LENGTH_LONG).show();
+                        : "S Cleaner cache is empty; other apps' caches were not scanned.",Toast.LENGTH_LONG).show();
                 updateUsage();
             });
         });
     }
 
     private void openReview(String mode) {
+        openReview(mode,hasAllFileAccess());
+    }
+
+    private void openReview(String mode,boolean allStorage) {
         Intent i=new Intent(this,ReviewActivity.class);
         i.putExtra(ReviewActivity.EXTRA_MODE,mode);
+        i.putExtra("scan_device",allStorage);
         startActivity(i);
     }
     private void openStorage() {
@@ -363,6 +496,15 @@ public final class MainActivity extends Activity {
         active=true;
         ui.removeCallbacks(monitor);
         monitor.run();
+        if((launchFullScanAfterSettings||launchSystemCacheAfterSettings)
+                && hasAllFileAccess()) {
+            boolean all=launchFullScanAfterSettings;
+            launchFullScanAfterSettings=false;
+            boolean cache=launchSystemCacheAfterSettings;
+            launchSystemCacheAfterSettings=false;
+            if(cache)openSystemCache();
+            else if(all)openReview(ReviewActivity.ANALYZE,true);
+        }
     }
     @Override protected void onPause() {
         active=false;

@@ -39,6 +39,7 @@ public final class ReviewActivity extends Activity {
     private FileScan.Result results;
     private String mode=JUNK;
     private String selectedFolder=null;
+    private boolean scanDevice=false; // Permissioned shared storage, not Android-private folders.
     private int jobVersion=0;
     private boolean working=false;
 
@@ -47,8 +48,9 @@ public final class ReviewActivity extends Activity {
         String requested=getIntent().getStringExtra(EXTRA_MODE);
         if (requested!=null) mode=requested;
         selectedFolder=getSharedPreferences("s_cleaner",MODE_PRIVATE).getString("folder",null);
+        scanDevice=getIntent().getBooleanExtra("scan_device",false) && hasDeviceAccess();
         buildUi();
-        if(selectedFolder!=null) scanFolder();
+        if(scanDevice || selectedFolder!=null) scanFolder();
     }
 
     private void buildUi() {
@@ -96,6 +98,15 @@ public final class ReviewActivity extends Activity {
         folderRow.addView(folderButton);
         folderButton.setOnClickListener(v->pickFolder());
         root.addView(folderRow);
+        if(hasDeviceAccess()) {
+            STheme.space(this,root,8);
+            TextView fullScan=STheme.pill(this,"◎ Scan all accessible shared files",false);
+            root.addView(fullScan);
+            fullScan.setOnClickListener(v->{
+                scanDevice=true;
+                scanFolder();
+            });
+        }
         STheme.space(this,root,12);
 
         description=STheme.text(this,"Select a folder to review its files.",13,STheme.secondary(this),false);
@@ -168,6 +179,7 @@ public final class ReviewActivity extends Activity {
         try {
             getContentResolver().takePersistableUriPermission(picked,flags);
             selectedFolder=picked.toString();
+            scanDevice=false;
             getSharedPreferences("s_cleaner",MODE_PRIVATE).edit()
                     .putString("folder",selectedFolder).apply();
             scanFolder();
@@ -187,33 +199,52 @@ public final class ReviewActivity extends Activity {
                 intro="Verified SHA-256 duplicates only. One copy of each group is excluded from this list.";
                 break;
             case ANALYZE:
-                intro="Storage breakdown of the selected folder. Check files before deleting.";
+                intro="Storage breakdown of accessible shared files. Only selected files can be deleted.";
                 break;
             default:
-                intro="Potential junk: .tmp, .log, .bak and incomplete downloads. Nothing is selected automatically.";
+                intro="Potential junk: .tmp, .log, .bak and incomplete downloads. This does not include other apps’ private caches. No files are selected automatically.";
         }
         description.setText(intro);
     }
 
+    private boolean hasDeviceAccess() {
+        if(android.os.Build.VERSION.SDK_INT>=30)
+            return android.os.Environment.isExternalStorageManager();
+        return android.os.Build.VERSION.SDK_INT<23 ||
+                checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                        ==android.content.pm.PackageManager.PERMISSION_GRANTED;
+    }
+
     private void scanFolder() {
-        if(selectedFolder==null) {
+        if(scanDevice && !hasDeviceAccess()) {
+            scanDevice=false;
+            status.setText("Device access is not granted");
+            Toast.makeText(this,"Open S Cleaner and grant shared storage access first",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        if(!scanDevice && selectedFolder==null) {
             status.setText("No folder selected");
             Toast.makeText(this,"Choose a permitted folder to scan",Toast.LENGTH_SHORT).show();
             return;
         }
+        final boolean full=scanDevice;
         final int version=++jobVersion;
-        final Uri uri=Uri.parse(selectedFolder);
+        final Uri uri=full?null:Uri.parse(selectedFolder);
         working=true;
+        results=null; // Never display stale results after permissions change.
         fileList.setEnabled(false);
         folderButton.setEnabled(false);
-        status.setText("Scanning selected folder…");
+        status.setText(full?"Scanning accessible shared storage…":"Scanning selected folder…");
         count.setText("Scanning safely in background");
         bottomButton.setText("Scanning…");
         worker.execute(()->{
             FileScan.Result data=null;
             Exception failure=null;
-            try { data=FileScan.scan(getApplicationContext(),uri); }
-            catch(Exception exc){failure=exc;}
+            try {
+                data=full?DeviceScan.scan(getApplicationContext()):
+                        FileScan.scan(getApplicationContext(),uri);
+            } catch(Exception exc){failure=exc;}
             final FileScan.Result scan=data;
             final Exception error=failure;
             runOnUiThread(()->{
@@ -222,14 +253,21 @@ public final class ReviewActivity extends Activity {
                 fileList.setEnabled(true);
                 folderButton.setEnabled(true);
                 if(error!=null) {
-                    status.setText("Could not access folder");
-                    description.setText("Android may have revoked folder access. Choose the folder again.");
-                    Toast.makeText(this,"Scan failed: permission or provider error",Toast.LENGTH_LONG).show();
+                    status.setText("Scan unavailable");
+                    results=null;
+                    description.setText("Storage permission may have been revoked, or the folder is unavailable. Choose a different folder or enable storage access.");
+                    Toast.makeText(this,"Scan failed: check Android storage access",
+                            Toast.LENGTH_LONG).show();
+                    updateResults();
                 } else {
                     results=scan;
-                    String last=DocumentsContract.getTreeDocumentId(uri);
-                    if(last.length()>50)last="…"+last.substring(last.length()-47);
-                    status.setText(last);
+                    if(full) {
+                        status.setText("Shared storage · accessible files only");
+                    } else {
+                        String last=DocumentsContract.getTreeDocumentId(uri);
+                        if(last.length()>50)last="…"+last.substring(last.length()-47);
+                        status.setText(last);
+                    }
                     updateResults();
                 }
             });
@@ -268,7 +306,7 @@ public final class ReviewActivity extends Activity {
             captions.add(name+"\n"+size(e.bytes)+"  ·  "+location+(e.deletable?"":"\nRead only"));
         }
         adapter.notifyDataSetChanged();
-        String scanState=results.partial?"  •  Partial scan":"";
+        String scanState=results.partial?"  •  Partial scan (limit / inaccessible folders)":"";
         if(results.skippedHash>0 && mode.equals(DUPES))
             scanState+="  •  "+results.skippedHash+" not hash-checked";
         count.setText(String.format(Locale.US,"%d files  •  %s%s",
