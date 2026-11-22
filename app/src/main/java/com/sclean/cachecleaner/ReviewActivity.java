@@ -157,6 +157,8 @@ public final class ReviewActivity extends Activity {
         }
     }
 
+    // The flags below are masked with Android's two grant bits; lint cannot infer the bitmask.
+    @android.annotation.SuppressLint("WrongConstant")
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
         if(request!=PICK_FOLDER || result!=RESULT_OK || data==null || data.getData()==null) return;

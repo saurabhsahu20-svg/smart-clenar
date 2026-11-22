@@ -33,6 +33,19 @@ jobs:
         run: gradle :app:assembleDebug --no-daemon --stacktrace
       - name: Android Lint verification
         run: gradle :app:lintDebug --no-daemon
+      - name: Print lint issues on failure
+        if: failure()
+        run: |
+          test -f app/build/reports/lint-results-debug.txt && cat app/build/reports/lint-results-debug.txt || true
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: S-Cleaner-Lint-Report
+          path: |
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.txt
+          if-no-files-found: ignore
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
