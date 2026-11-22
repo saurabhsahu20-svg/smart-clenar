@@ -11,7 +11,14 @@ import android.provider.DocumentsContract;
 import android.text.format.Formatter;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.ArrayAdapter;
+import android.widget.BaseAdapter;
+import android.widget.CheckedTextView;
+import android.widget.EditText;
+import android.view.ViewGroup;
+import java.util.LinkedHashMap;
+import java.util.concurrent.Future;
+import android.os.Environment;
+import java.io.File;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
@@ -31,8 +38,11 @@ public final class ReviewActivity extends Activity {
     private static final int PICK_FOLDER=17;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final List<FileScan.Entry> showing=new ArrayList<>();
-    private final List<String> captions=new ArrayList<>();
-    private ArrayAdapter<String> adapter;
+    private final LinkedHashMap<String, FileScan.Entry> selected=new LinkedHashMap<>();
+    private BaseAdapter adapter;
+    private TextView selectAllButton, clearButton, renameButton, rescanButton;
+    private Future<?> scanTask;
+    private boolean deleting=false;
     private ListView fileList;
     private LinearLayout bars;
     private TextView description, count, bottomButton, folderButton, status;
@@ -81,7 +91,14 @@ public final class ReviewActivity extends Activity {
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,STheme.dp(this,46));
             lp.rightMargin=STheme.dp(this,8);
             tabs.addView(t,lp);
-            t.setOnClickListener(v->{mode=label;updateResults();});
+            t.setOnClickListener(v->{
+                if(working || deleting) {
+                    Toast.makeText(this,"Complete the current operation first",Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                mode=label;
+                updateResults();
+            });
         }
         scroll.addView(tabs);
         root.addView(scroll);
@@ -114,39 +131,85 @@ public final class ReviewActivity extends Activity {
         STheme.space(this,root,10);
         count=STheme.text(this,"0 files",15,STheme.MINT,true);
         root.addView(count);
+        STheme.space(this,root,10);
+        LinearLayout selectionBar=STheme.row(this);
+        selectAllButton=STheme.pill(this,"Select All",false);
+        clearButton=STheme.pill(this,"Clear",false);
+        renameButton=STheme.pill(this,"Rename",false);
+        TextView[] options={selectAllButton,clearButton,renameButton};
+        for(int i=0;i<options.length;i++) {
+            TextView button=options[i];
+            button.setTextSize(12);
+            LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,STheme.dp(this,45),1);
+            if(i>0)params.leftMargin=STheme.dp(this,6);
+            selectionBar.addView(button,params);
+        }
+        root.addView(selectionBar);
+        selectAllButton.setOnClickListener(v->selectAll());
+        clearButton.setOnClickListener(v->clearSelected());
+        renameButton.setOnClickListener(v->renameSelected());
         STheme.space(this,root,8);
         bars=STheme.column(this);
         root.addView(bars);
         STheme.space(this,root,8);
 
         fileList=new ListView(this);
-        fileList.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
+        fileList.setChoiceMode(ListView.CHOICE_MODE_NONE);
         fileList.setDividerHeight(0);
         fileList.setCacheColorHint(Color.TRANSPARENT);
         fileList.setBackground(STheme.rounded(STheme.cardColor(this),20,this));
-        adapter=new ArrayAdapter<String>(this,android.R.layout.simple_list_item_multiple_choice,captions) {
-            @Override public View getView(int pos,View convertView,android.view.ViewGroup parent) {
-                View row=super.getView(pos,convertView,parent);
-                if(row instanceof android.widget.CheckedTextView) {
-                    android.widget.CheckedTextView label=(android.widget.CheckedTextView)row;
-                    label.setTextColor(STheme.text(ReviewActivity.this));
-                    label.setTextSize(13);
-                    label.setPadding(STheme.dp(ReviewActivity.this,14),
-                            STheme.dp(ReviewActivity.this,8),STheme.dp(ReviewActivity.this,14),
-                            STheme.dp(ReviewActivity.this,8));
-                }
-                return row;
+        // Virtualized rows: no 70,000-element caption array on the UI thread.
+        adapter=new BaseAdapter() {
+            @Override public int getCount(){return showing.size();}
+            @Override public Object getItem(int position){return showing.get(position);}
+            @Override public long getItemId(int position){return position;}
+            @Override public View getView(int position,View reuse,ViewGroup parent) {
+                CheckedTextView label=(reuse instanceof CheckedTextView)
+                        ?(CheckedTextView)reuse
+                        :(CheckedTextView)getLayoutInflater().inflate(
+                                android.R.layout.simple_list_item_multiple_choice,parent,false);
+                FileScan.Entry e=showing.get(position);
+                String name=e.name.length()>74?e.name.substring(0,71)+"…":e.name;
+                String place=e.location.length()>90?
+                        "…"+e.location.substring(e.location.length()-87):e.location;
+                label.setText(name+"\n"+size(e.bytes)+" • "+place+
+                        (e.deletable?"":"\nProtected · read-only"));
+                label.setTextColor(e.deletable?STheme.text(ReviewActivity.this):
+                        STheme.secondary(ReviewActivity.this));
+                label.setTextSize(13);
+                label.setPadding(STheme.dp(ReviewActivity.this,14),
+                        STheme.dp(ReviewActivity.this,10),STheme.dp(ReviewActivity.this,14),
+                        STheme.dp(ReviewActivity.this,10));
+                label.setChecked(selected.containsKey(key(e)));
+                label.setEnabled(true);
+                return label;
             }
         };
         fileList.setAdapter(adapter);
         root.addView(fileList,new LinearLayout.LayoutParams(-1,0,1));
-        fileList.setOnItemClickListener((a,b,pos,id)->updateSelection());
+        fileList.setOnItemClickListener((a,b,pos,id)->{
+            if(working || deleting || pos<0 || pos>=showing.size())return;
+            FileScan.Entry e=showing.get(pos);
+            if(!e.deletable) {
+                Toast.makeText(this,"This item is read-only",Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String k=key(e);
+            if(selected.containsKey(k))selected.remove(k);
+            else selected.put(k,e);
+            // Only visible rows are rebound; no full scan of checkbox states.
+            adapter.notifyDataSetChanged();
+            updateSelection();
+        });
         STheme.space(this,root,10);
 
         LinearLayout buttons=STheme.row(this);
-        TextView rescan=STheme.pill(this,"↻ Rescan",false);
-        buttons.addView(rescan,new LinearLayout.LayoutParams(0,-2,1));
-        rescan.setOnClickListener(v->scanFolder());
+        rescanButton=STheme.pill(this,"↻ Rescan",false);
+        buttons.addView(rescanButton,new LinearLayout.LayoutParams(0,-2,1));
+        rescanButton.setOnClickListener(v->{
+            if(deleting) return;
+            scanFolder();
+        });
         View space=new View(this);
         buttons.addView(space,new LinearLayout.LayoutParams(STheme.dp(this,10),1));
         bottomButton=STheme.pill(this,"Select files",true);
@@ -228,17 +291,25 @@ public final class ReviewActivity extends Activity {
             Toast.makeText(this,"Choose a permitted folder to scan",Toast.LENGTH_SHORT).show();
             return;
         }
+        if(deleting) {
+            Toast.makeText(this,"Finish file changes before rescanning",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if(scanTask!=null)scanTask.cancel(true);
         final boolean full=scanDevice;
         final int version=++jobVersion;
         final Uri uri=full?null:Uri.parse(selectedFolder);
         working=true;
-        results=null; // Never display stale results after permissions change.
+        results=null;
+        showing.clear();
+        selected.clear();
+        adapter.notifyDataSetChanged();
         fileList.setEnabled(false);
         folderButton.setEnabled(false);
         status.setText(full?"Scanning accessible shared storage…":"Scanning selected folder…");
         count.setText("Scanning safely in background");
-        bottomButton.setText("Scanning…");
-        worker.execute(()->{
+        updateSelection();
+        scanTask=worker.submit(()->{
             FileScan.Result data=null;
             Exception failure=null;
             try {
@@ -252,6 +323,7 @@ public final class ReviewActivity extends Activity {
                 working=false;
                 fileList.setEnabled(true);
                 folderButton.setEnabled(true);
+                updateSelection();
                 if(error!=null) {
                     status.setText("Scan unavailable");
                     results=null;
@@ -287,8 +359,7 @@ public final class ReviewActivity extends Activity {
     private void updateResults() {
         refreshIntro();
         showing.clear();
-        captions.clear();
-        fileList.clearChoices();
+        selected.clear();
         bars.removeAllViews();
         if(results==null) {
             adapter.notifyDataSetChanged();
@@ -298,13 +369,7 @@ public final class ReviewActivity extends Activity {
         }
         showing.addAll(currentEntries());
         long total=0;
-        for(FileScan.Entry e: showing) {
-            if(e.bytes>0)total+=e.bytes;
-            String name=e.name.length()>65 ? e.name.substring(0,62)+"…" : e.name;
-            String location=e.location;
-            if(location.length()>80)location="…"+location.substring(location.length()-77);
-            captions.add(name+"\n"+size(e.bytes)+"  ·  "+location+(e.deletable?"":"\nRead only"));
-        }
+        for(FileScan.Entry e: showing) if(e.bytes>0)total+=e.bytes;
         adapter.notifyDataSetChanged();
         String scanState=results.partial?"  •  Partial scan (limit / inaccessible folders)":"";
         if(results.skippedHash>0 && mode.equals(DUPES))
@@ -342,48 +407,92 @@ public final class ReviewActivity extends Activity {
         }
     }
 
+    private static String key(FileScan.Entry e) {return e.uri.toString();}
+
+    private void clearSelected() {
+        if(working || deleting)return;
+        selected.clear();
+        adapter.notifyDataSetChanged();
+        updateSelection();
+    }
+
+    private void selectAll() {
+        if(working || deleting || showing.isEmpty())return;
+        int eligible=0;
+        for(FileScan.Entry e:showing)if(e.deletable)eligible++;
+        if(eligible==0) {
+            Toast.makeText(this,"No editable files available",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        // Selecting all does not delete anything. Always confirm mass deletion separately.
+        if(eligible>1000) {
+            int count=eligible;
+            new AlertDialog.Builder(this)
+                    .setTitle("Select "+count+" files?")
+                    .setMessage("This selects every editable file in the current "+mode+
+                            " list. No files are deleted until you confirm. Review before deleting.")
+                    .setNegativeButton("Cancel",null)
+                    .setPositiveButton("Select All",(d,w)->doSelectAll())
+                    .show();
+        } else doSelectAll();
+    }
+
+    private void doSelectAll() {
+        if(working || deleting)return;
+        selected.clear();
+        for(FileScan.Entry e:showing)if(e.deletable)selected.put(key(e),e);
+        adapter.notifyDataSetChanged();
+        updateSelection();
+    }
+
     private void updateSelection() {
-        long bytes=0; int chosen=0;
-        for(int i=0;i<showing.size();i++) {
-            if(fileList.isItemChecked(i)) { chosen++; bytes+=Math.max(0,showing.get(i).bytes); }
-        }
-        if(working) {
-            bottomButton.setText("Scanning…");
-            bottomButton.setEnabled(false);
-        } else {
-            bottomButton.setEnabled(chosen>0);
-            bottomButton.setAlpha(chosen>0?1f:.55f);
-            bottomButton.setText(chosen>0 ? "Delete "+chosen+" selected · "+size(bytes) : "Select files to delete");
-        }
+        long bytes=0;
+        for(FileScan.Entry e:selected.values())bytes+=Math.max(0L,e.bytes);
+        int chosen=selected.size();
+        boolean busy=working||deleting;
+        bottomButton.setEnabled(!busy && chosen>0);
+        bottomButton.setAlpha(!busy && chosen>0 ? 1f : .55f);
+        bottomButton.setText(busy?(deleting?"Applying changes…":"Scanning…"):
+                (chosen>0 ? "Delete "+chosen+" selected · "+size(bytes) : "Select files manually"));
+        selectAllButton.setEnabled(!busy && !showing.isEmpty());
+        clearButton.setEnabled(!busy && chosen>0);
+        renameButton.setEnabled(!busy && chosen==1);
+        rescanButton.setEnabled(!deleting);
+        renameButton.setAlpha(!busy && chosen==1 ? 1f : .50f);
     }
 
     private void confirmDelete() {
-        if(working)return;
-        List<FileScan.Entry> selected=new ArrayList<>();
+        if(working || deleting || selected.isEmpty())return;
+        List<FileScan.Entry> selectedFiles=new ArrayList<>(selected.values());
         long size=0;
-        for(int i=0;i<showing.size();i++)if(fileList.isItemChecked(i)) {
-            FileScan.Entry e=showing.get(i);
-            selected.add(e);
-            size+=Math.max(0,e.bytes);
-        }
-        if(selected.isEmpty())return;
+        for(FileScan.Entry e:selectedFiles)size+=Math.max(0,e.bytes);
         final long bytes=size;
         new AlertDialog.Builder(this)
-            .setTitle("Delete "+selected.size()+" selected files?")
-            .setMessage("These files total "+size(bytes)+". Deletion may be permanent and cannot be undone. Confirm only if you no longer need these personal files.")
+            .setTitle("Delete "+selectedFiles.size()+" selected files?")
+            .setMessage("You selected "+selectedFiles.size()+" files totaling "+size(bytes)+
+                    ". This can permanently delete personal files and cannot be undone. Continue only if you no longer need them.")
             .setNegativeButton("Cancel",null)
-            .setPositiveButton("Delete files",(dialog,which)->deleteFiles(selected))
+            .setPositiveButton("Review deletion",(dialog,which)->{
+                // A second confirmation is especially important for bulk operations.
+                new AlertDialog.Builder(this)
+                        .setTitle("Final confirmation")
+                        .setMessage("Permanently delete "+selectedFiles.size()+" files? This is NOT a cache-only cleanup.")
+                        .setNegativeButton("Keep files",null)
+                        .setPositiveButton("Delete selected",(d,w)->deleteFiles(selectedFiles))
+                        .show();
+            })
             .show();
     }
 
     private void deleteFiles(List<FileScan.Entry> selected) {
-        working=true;
+        deleting=true;
         updateSelection();
         worker.execute(()->{
             long[] stats=FileScan.delete(getApplicationContext(),selected);
             runOnUiThread(()->{
                 if(isFinishing()||isDestroyed())return;
-                working=false;
+                deleting=false;
+                updateSelection();
                 new AlertDialog.Builder(this)
                     .setTitle("Cleanup finished")
                     .setMessage(stats[0]+" files deleted ("+size(stats[2])+")."+
@@ -395,12 +504,95 @@ public final class ReviewActivity extends Activity {
         });
     }
 
+    private void renameSelected() {
+        if(working || deleting || selected.size()!=1)return;
+        FileScan.Entry entry=selected.values().iterator().next();
+        EditText editor=new EditText(this);
+        editor.setSingleLine(true);
+        editor.setText(entry.name);
+        editor.setSelectAllOnFocus(true);
+        LinearLayout container=STheme.column(this);
+        container.setPadding(STheme.dp(this,22),STheme.dp(this,5),
+                STheme.dp(this,22),0);
+        container.addView(editor);
+        new AlertDialog.Builder(this)
+                .setTitle("Rename file")
+                .setMessage("Choose a new filename. File contents will not change.")
+                .setView(container)
+                .setNegativeButton("Cancel",null)
+                .setPositiveButton("Rename",(dialog,which)->{
+                    String proposed=editor.getText().toString().trim();
+                    if(!isValidName(proposed)) {
+                        Toast.makeText(this,"Invalid filename. Avoid /, \\, :, and special characters.",
+                                Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    if(proposed.equals(entry.name))return;
+                    performRename(entry,proposed);
+                }).show();
+    }
+
+    private static boolean isValidName(String value) {
+        if(value.isEmpty() || value.equals(".") || value.equals("..") ||
+                value.length()>180 || value.endsWith(".") || value.endsWith(" "))return false;
+        for(int i=0;i<value.length();i++) {
+            char c=value.charAt(i);
+            if(c<' ' || c== '/' || c=='\\' || c==':' ||
+                    c=='*' || c=='?' || c=='"' || c=='<' || c=='>' || c=='|')return false;
+        }
+        return true;
+    }
+
+    private void performRename(FileScan.Entry entry,String newName) {
+        if(deleting || working)return;
+        deleting=true;
+        updateSelection();
+        worker.execute(()->{
+            boolean success=false;
+            try {
+                if(entry.localFile!=null) {
+                    if(android.os.Build.VERSION.SDK_INT<30 ||
+                            Environment.isExternalStorageManager()) {
+                        File current=entry.localFile;
+                        File parent=current.getParentFile();
+                        File root=Environment.getExternalStorageDirectory();
+                        File target=new File(parent,newName);
+                        String base=root.getCanonicalPath()+File.separator;
+                        String src=current.getCanonicalPath();
+                        String dest=target.getCanonicalPath();
+                        if(src.startsWith(base) && dest.startsWith(base) &&
+                                src.equals(current.getAbsolutePath()) &&
+                                dest.equals(target.getAbsolutePath()) &&
+                                parent.isDirectory() && current.isFile() &&
+                                !target.exists())success=current.renameTo(target);
+                    }
+                } else {
+                    Uri renamed=DocumentsContract.renameDocument(
+                            getContentResolver(),entry.uri,newName);
+                    success=renamed!=null;
+                }
+            } catch(Exception ignored) {
+                success=false;
+            }
+            final boolean okay=success;
+            runOnUiThread(()->{
+                if(isFinishing()||isDestroyed())return;
+                deleting=false;
+                updateSelection();
+                Toast.makeText(this,okay?"File renamed successfully":
+                        "Rename unavailable for this file or provider",Toast.LENGTH_LONG).show();
+                scanFolder();
+            });
+        });
+    }
+
     private String size(long bytes) {
         return bytes<0?"Unknown size":Formatter.formatFileSize(this,bytes);
     }
 
     @Override protected void onDestroy() {
         ++jobVersion;
+        if(scanTask!=null)scanTask.cancel(true);
         worker.shutdownNow();
         super.onDestroy();
     }

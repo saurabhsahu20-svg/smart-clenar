@@ -222,9 +222,14 @@ final class FileScan {
             }
         }
         byte[] raw=digest.digest();
-        StringBuilder out=new StringBuilder(raw.length*2);
-        for(byte b:raw)out.append(String.format(Locale.US,"%02x",b & 0xff));
-        return out.toString();
+        final char[] hex="0123456789abcdef".toCharArray();
+        char[] encoded=new char[raw.length*2];
+        for(int i=0;i<raw.length;i++) {
+            int v=raw[i]&0xff;
+            encoded[i*2]=hex[v>>>4];
+            encoded[i*2+1]=hex[v&15];
+        }
+        return new String(encoded);
     }
 
     static long[] delete(Context context, List<Entry> entries) {

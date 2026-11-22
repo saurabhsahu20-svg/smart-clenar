@@ -1,18 +1,26 @@
-# S Cleaner 2.1.0 — Shared Storage & System Cache Update
+# S Cleaner v2.2.0 — smoother multi-select and manual file management
 
-## What changed
-- **Scan shared storage**: with optional, explicitly approved Android **All files access** permission, S Cleaner can scan the accessible files in primary shared storage — including PDFs, archives, downloads, images, music and videos — for potential junk, duplicates and large files. It does **not** access Android-protected private app folders or claim to scan them.
-- **Single-folder privacy alternative**: select a permitted folder using the Android document picker without broad file access.
-- **Correct cache feedback**: one-tap app cleanup only removes **S Cleaner's own cache** and labels it accordingly; no misleading "your entire device is clean" status.
-- **System external cache cleanup**: Android 11+ exposes an optional system-provided confirmation dialog through `StorageManager.ACTION_CLEAR_APP_CACHE` (requires All files access). This can clear *external cache directories* of apps **after the user's Android confirmation**. If the device doesn't offer this dialog, the app opens manual App Manager shortcuts. It does not clear every app's private/internal cache.
-- **Manual file deletion**: zero files selected automatically, explicit review and confirmation before any user file deletion.
-- **Scan is local and bounded**: at most 70,000 accessible files, 12,000 directories, depth 28 for the primary device scan; the interface shows "Partial scan" when limits are hit. Hash-based duplicate detection is bounded to avoid excessive data/battery use.
+S Cleaner is a premium local Android storage assistant for Android 6.0+.
 
-## Storage access limitations
-Android 11+ blocks private locations such as other apps' `Android/data` directories even with All files access. On older Android versions, storage permissions and the availability of files vary by API level/OEM. System app caches and Android OS caches are **not** comprehensively cleared. No root, accessibility abuse, hidden deletion or device compromise.
+## What's new in v2.2
+- **Select All**: select every editable file in the *current* category (Junk, Large Files, Duplicates or Analyze); selecting 1000+ items shows an additional selection prompt.
+- **Clear**: deselect everything.
+- **Manual selection**: tap individual rows to select/deselect; checkmarks and selected file sizes update dynamically.
+- **Rename**: choose exactly one file and tap Rename; name is validated; files are never overwritten, and renaming a provider file depends on Android's Storage Access Framework.
+- **Bulk delete**: two independent user confirmations before permanent deletion.
+- **Performance**: memory-friendly, recycled ListView rows instead of formatting every scanned item into an extra list on the main thread. Background scans can be interrupted if a new scan is requested. Faster hash-to-hex for SHA-256 duplicate detection.
+- **State safety**: no stale selections when switching categories or changing folders; controls are disabled during a scan/delete/rename.
 
-## Privacy
-There is no internet permission, analytics or upload. All results remain on device. Storage permission can be revoked in Android Settings. This release includes `MANAGE_EXTERNAL_STORAGE`, a **sensitive restricted permission**. Google Play requires a **permission declaration and approval** for eligible file-management use; it is not automatically Play Store approved. A release-signed AAB, real device tests, Data safety answers and store review are required before publishing.
+## Supported cleaning
+- Clear **S Cleaner's own cache** directly.
+- On supported Android 11+ devices, **Clear System External Caches** opens the *Android-controlled confirmation dialog*. It cannot clear every other app's private/internal cache.
+- With optional approved **All files access** (Android 11+), scan accessible primary shared storage for junk/duplicate/large files. Protected Android app-private areas cannot be read.
+- Without broad storage permission, use **Choose folder** and the standard Storage Access Framework picker to scan a specific permitted folder.
+- No personal files are deleted without selection and two confirmation dialogs.
 
-## Build test APK
-GitHub Actions → `Build S Cleaner Android APK` → successful run → `S-Cleaner-v2.1-Debug-APK` artifact ZIP → extract APK. Android SDK 36, Java 17. The build artifact is for device testing, not a signed public release.
+## Limits and Play Store disclosure
+Scanning is bounded to protect battery and memory (70,000 files / 12,000 folders / 28 levels for full scans). Hash scanning is bounded to avoid heavy I/O, so some duplicates may not be analyzed. These limits and inaccessible folders may lead to *partial scan* labels. Never treat an empty category as proof that every byte of a device cache has been scanned.
+The app requests optional `MANAGE_EXTERNAL_STORAGE` for core shared-storage scanning. Google Play requires eligibility review and declaration for this sensitive permission. To publish, create a release-signed AAB, privacy policy, store listing, and conduct real-device/manual testing. GitHub Actions builds a **debug APK** only.
+
+## Development
+GitHub Actions -> Build S Cleaner Android APK -> successful run -> download `S-Cleaner-v2.2-Debug-APK` artifact.
