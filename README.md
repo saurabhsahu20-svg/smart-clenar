@@ -1,21 +1,24 @@
-# S Cache Cleaner — Android
+# S Cleaner v2.0.0
 
-Native Android app for phones and tablets, including Lenovo Tab M11. Supports Android 6.0+ (API 23+).
+Premium native Android storage assistant, Android 6.0+ and target SDK 36.
 
 ## Features
+- Dark blue + mint **premium dashboard**, animated 3D-inspired storage ring, dark/light toggle, responsive two-column tool cards.
+- One-tap **safe cleanup** removes only S Cleaner's own temporary cache.
+- **Junk file review, large files, duplicate finder, file categories and storage analysis** work only inside a folder chosen via Android's system folder picker (Storage Access Framework, SAF).
+- **Duplicate detection** verifies contents using SHA-256, compares only size matches, and keeps an original file untouched by default.
+- Explicit multi-selection and a separate confirmation dialog are always required before deleting **any personal or shared file**. Deletion cannot be undone.
+- App Manager lists discoverable launchable apps and opens Android's own per-app cache screen.
+- Downloads and system storage manager shortcuts.
+- Foreground-only storage monitoring, no persistent background service.
+- No ads, internet access, analytics, broad file permission, QUERY_ALL_PACKAGES, accessibility permissions, or root.
 
-- View free and used internal device storage.
-- Clean **this app's own cache** in a background task, safely.
-- Find installed launchable apps and open their official Android App info to clear their cache manually.
-- Open Android storage manager and Downloads.
-- Hindi and English interface; no ads, no analytics, no network access, and no dangerous permissions.
+## Important limitations
+Android cannot grant this app unrestricted access to other applications' private cache folders. One-tap cleaning therefore **does not** clear cache from other apps. Use App Manager to open official system App Info and select 'Storage & cache → Clear cache'.
 
-**Android privacy restriction:** A normal third-party Android app cannot automatically erase all other apps' cache. To clear another app's cache, select the app, open Android's Storage & cache section and tap **Clear cache**. Do not tap **Clear storage** unless you want to reset its data.
+On Android 11 and newer, Android's system picker blocks selecting some roots, including the top-level internal storage root and top-level Downloads. Choose a permitted subfolder instead. Scans are bounded (up to 5,000 entries, 12 levels deep); when the limit is reached the UI says results are partial. Duplicates are content-hashed only when eligible within scan budgets. No false 'everything clean' claims.
 
-## Build APK on GitHub
+## Build
+GitHub Actions → Build S Cleaner Android APK → a successful run → Artifacts → S-Cleaner-v2-Debug-APK. The downloaded artifact ZIP contains app-debug.apk.
 
-Go to **Actions → Build Android APK → Run workflow** (or push to main). After a **successful** workflow run, download the **S-Cache-Cleaner-Debug-APK** artifact from the run. Unzip it to get `app-debug.apk`.
-
-Local build with Android SDK 35, JDK 17 and Gradle 8.9: `gradle :app:assembleDebug`.
-
-This is a debug build for testing, not a Play Store signed release. Device compatibility and build success should be verified before public distribution.
+For Google Play, build and sign a **release AAB with a secure signing key**, complete Data safety and store listing / privacy policy, and perform device tests, accessibility testing and Play Console review. This repo's workflow creates a debug APK for testing; it is **not a published Play Store release**.

@@ -4,223 +4,373 @@ import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.Intent;
 import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.storage.StorageManager;
 import android.provider.Settings;
+import android.text.format.Formatter;
 import android.view.Gravity;
 import android.view.View;
-import android.view.WindowInsets;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
-    private static final int BLUE = 0xFF3454E9;
-    private static final int NAVY = 0xFF1C2B4F;
-    private static final int MUTE = 0xFF68758D;
-    private final ExecutorService work = Executors.newSingleThreadExecutor();
-    private final Handler ui = new Handler(Looper.getMainLooper());
-    private TextView storage, appCache, cleanButton;
-    private volatile boolean cleaning = false;
+    private final ExecutorService executor=Executors.newSingleThreadExecutor();
+    private final Handler ui=new Handler(Looper.getMainLooper());
+    private StorageRingView ring;
+    private TextView storageCaption, available, occupied, cacheLabel, cleanBtn, monitorText;
+    private boolean cleanupBusy=false;
+    private boolean active=false;
+    private final Runnable monitor=new Runnable() {
+        @Override public void run() {
+            if(!active)return;
+            updateUsage();
+            ui.postDelayed(this,30000L);
+        }
+    };
 
-    @Override public void onCreate(Bundle state) {
+    @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        ScrollView scroll = new ScrollView(this);
+        drawPage();
+    }
+
+    private void drawPage() {
+        boolean dark=STheme.dark(this);
+        getWindow().setStatusBarColor(STheme.bg(this));
+        getWindow().setNavigationBarColor(STheme.bg(this));
+        if (Build.VERSION.SDK_INT>=23) {
+            getWindow().getDecorView().setSystemUiVisibility(
+                    dark?0:View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        }
+
+        FrameLayout frame=new FrameLayout(this);
+        frame.setBackgroundColor(STheme.bg(this));
+        STheme.insets(this,frame,0,0,0,0);
+        setContentView(frame);
+        ScrollView scroll=new ScrollView(this);
+        scroll.setClipToPadding(false);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(0xFFF5F7FC);
-        LinearLayout page = new LinearLayout(this);
-        page.setOrientation(LinearLayout.VERTICAL);
-        int p = dp(20);
-        page.setPadding(p, dp(24), p, dp(32));
+        scroll.setVerticalScrollBarEnabled(false);
+        int max=STheme.dp(this,760);
+        int screen=getResources().getDisplayMetrics().widthPixels;
+        FrameLayout.LayoutParams sp=new FrameLayout.LayoutParams(
+                Math.min(max,screen),ViewGroup.LayoutParams.MATCH_PARENT,Gravity.CENTER_HORIZONTAL);
+        frame.addView(scroll,sp);
+
+        LinearLayout page=STheme.column(this);
+        page.setPadding(STheme.dp(this,20),STheme.dp(this,23),
+                STheme.dp(this,20),STheme.dp(this,32));
         scroll.addView(page);
-        setContentView(scroll);
-        if (Build.VERSION.SDK_INT >= 35) {
-            scroll.setOnApplyWindowInsetsListener((v, insets) -> {
-                android.graphics.Insets bars = insets.getInsets(
-                        WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
-                return insets;
-            });
-        }
+        header(page);
+        STheme.space(this,page,22);
+        hero(page);
+        STheme.space(this,page,18);
+        action(page);
+        STheme.space(this,page,29);
 
-        page.addView(text("S Cache Cleaner", 27, NAVY, true));
-        page.addView(text(getString(R.string.tagline), 14, MUTE, false));
-        space(page, 18);
-        LinearLayout hero = panel(0xFF2846DA);
-        hero.addView(text(getString(R.string.storage_title), 13, Color.WHITE, true));
-        space(hero, 10);
-        storage = text("…", 17, Color.WHITE, true);
-        hero.addView(storage);
-        page.addView(hero);
-        space(page, 16);
-        TextView privacy = text("✓  " + getString(R.string.privacy), 12, BLUE, true);
-        privacy.setGravity(Gravity.CENTER);
+        LinearLayout heading=STheme.row(this);
+        TextView label=STheme.text(this,"Cleaning toolkit",21,STheme.text(this),true);
+        heading.addView(label,new LinearLayout.LayoutParams(0,-2,1));
+        heading.addView(STheme.text(this,"8 TOOLS",11,STheme.MINT,true));
+        page.addView(heading);
+        STheme.space(this,page,6);
+        page.addView(STheme.text(this,"Powerful tools. You stay in control.",
+                13,STheme.secondary(this),false));
+        STheme.space(this,page,14);
+
+        toolRow(page,"clean","Smart Cache","App cache shortcuts",
+                ()->startActivity(new Intent(this,AppsActivity.class)),
+                "junk","Junk Files","Review potential junk",
+                ()->openReview(ReviewActivity.JUNK));
+        toolRow(page,"dupes","Duplicates","Content-verified",
+                ()->openReview(ReviewActivity.DUPES),
+                "large","Large Files","Find 50 MB+ files",
+                ()->openReview(ReviewActivity.LARGE));
+        toolRow(page,"analyze","Storage Analyzer","File type breakdown",
+                ()->openReview(ReviewActivity.ANALYZE),
+                "download","Downloads","Open download manager",
+                this::openDownloads);
+        toolRow(page,"apps","App Manager","Manage installed apps",
+                ()->startActivity(new Intent(this,AppsActivity.class)),
+                "monitor","Storage Monitor","System storage settings",
+                this::openStorage);
+
+        STheme.space(this,page,18);
+        LinearLayout live=STheme.panel(this);
+        LinearLayout liveTop=STheme.row(this);
+        TextView dot=STheme.text(this,"●",17,STheme.MINT,true);
+        liveTop.addView(dot);
+        TextView title=STheme.text(this,"  LIVE STORAGE MONITOR",12,STheme.text(this),true);
+        liveTop.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        TextView refresh=STheme.text(this,"↻ Refresh",12,STheme.MINT,true);
+        refresh.setPadding(STheme.dp(this,10),STheme.dp(this,6),
+                STheme.dp(this,4),STheme.dp(this,6));
+        refresh.setOnClickListener(v->updateUsage());
+        liveTop.addView(refresh);
+        live.addView(liveTop);
+        STheme.space(this,live,9);
+        monitorText=STheme.text(this,"Monitoring internal storage while app is open.",
+                14,STheme.secondary(this),false);
+        live.addView(monitorText);
+        page.addView(live);
+
+        STheme.space(this,page,18);
+        LinearLayout privacy=STheme.panel(this);
+        LinearLayout privacyHeading=STheme.row(this);
+        TextView privacyIcon=STheme.text(this,"✓",22,STheme.MINT,true);
+        privacyHeading.addView(privacyIcon);
+        privacyHeading.addView(STheme.text(this,"   Privacy-first protection",16,STheme.text(this),true));
+        privacy.addView(privacyHeading);
+        STheme.space(this,privacy,8);
+        privacy.addView(STheme.text(this,
+                "No ads, no tracking and no all-files access. File tools scan only folders that you explicitly select. You choose each file before deletion.",
+                13,STheme.secondary(this),false));
+        STheme.space(this,privacy,9);
+        privacy.addView(STheme.text(this,
+                "Android limits access to other apps' private caches. Use Smart Cache to open official Android app settings.",
+                12,STheme.secondary(this),false));
         page.addView(privacy);
-        space(page, 24);
+        STheme.space(this,page,19);
+        TextView footer=STheme.text(this,"S CLEANER  •  VERSION 2.0  •  MADE FOR ANDROID",
+                11,STheme.secondary(this),true);
+        footer.setGravity(Gravity.CENTER);
+        page.addView(footer);
 
-        page.addView(text(getString(R.string.cache_title), 20, NAVY, true));
-        space(page, 10);
-        LinearLayout own = panel(Color.WHITE);
-        own.addView(text(getString(R.string.cache_description), 14, MUTE, false));
-        space(own, 14);
-        appCache = text("…", 15, BLUE, true);
-        own.addView(appCache);
-        space(own, 15);
-        cleanButton = button(getString(R.string.clean_now), BLUE, Color.WHITE);
-        own.addView(cleanButton);
-        cleanButton.setOnClickListener(v -> clearOwn());
-        page.addView(own);
-        space(page, 16);
-
-        LinearLayout others = panel(Color.WHITE);
-        others.addView(text(getString(R.string.other_apps), 19, NAVY, true));
-        space(others, 8);
-        others.addView(text(getString(R.string.other_apps_desc), 14, MUTE, false));
-        space(others, 14);
-        TextView browse = button(getString(R.string.browse_apps), 0xFFEAF0FF, BLUE);
-        others.addView(browse);
-        browse.setOnClickListener(v -> startActivity(new Intent(this, AppsActivity.class)));
-        page.addView(others);
-        space(page, 24);
-
-        page.addView(text(getString(R.string.tools_title), 20, NAVY, true));
-        space(page, 10);
-        TextView openStorage = button(getString(R.string.storage_settings), Color.WHITE, NAVY);
-        page.addView(openStorage);
-        openStorage.setOnClickListener(v -> launchStorage());
-        space(page, 10);
-        TextView downloads = button(getString(R.string.downloads), Color.WHITE, NAVY);
-        page.addView(downloads);
-        downloads.setOnClickListener(v -> launchDownloads());
-        space(page, 22);
-
-        LinearLayout notice = panel(0xFFE8EFFF);
-        notice.addView(text("✓  " + getString(R.string.safety_title), 17, NAVY, true));
-        space(notice, 6);
-        notice.addView(text(getString(R.string.safety_desc), 13, MUTE, false));
-        page.addView(notice);
-        space(page, 18);
-        page.addView(text(getString(R.string.compatibility), 12, MUTE, false));
+        page.setAlpha(0f); page.setTranslationY(STheme.dp(this,12));
+        page.animate().alpha(1f).translationY(0).setDuration(380).start();
     }
 
-    @Override protected void onResume() {
-        super.onResume();
-        long[] s = CacheTools.storage();
-        if (storage != null) {
-            long total = Math.max(0L, s[0]);
-            long free = Math.min(total, Math.max(0L, s[1]));
-            storage.setText(total == 0 ? "—" :
-                    getString(R.string.free) + ": " + CacheTools.size(this, free) +
-                    "    •    " + getString(R.string.used) + ": " + CacheTools.size(this, total - free));
+    private void header(LinearLayout parent) {
+        LinearLayout row=STheme.row(this);
+        FrameLayout brand=new FrameLayout(this);
+        brand.setBackground(STheme.gradient(this,STheme.MINT,0xFF16A6C3,17));
+        TextView letter=STheme.text(this,"S",25,STheme.INK,true);
+        letter.setGravity(Gravity.CENTER);
+        brand.addView(letter,new FrameLayout.LayoutParams(-1,-1));
+        row.addView(brand,new LinearLayout.LayoutParams(STheme.dp(this,52),STheme.dp(this,52)));
+        LinearLayout words=STheme.column(this);
+        words.setPadding(STheme.dp(this,12),0,0,0);
+        words.addView(STheme.text(this,"S Cleaner",25,STheme.text(this),true));
+        words.addView(STheme.text(this,"Your space. Simplified.",12,STheme.secondary(this),false));
+        row.addView(words,new LinearLayout.LayoutParams(0,-2,1));
+        TextView switchTheme=STheme.text(this,STheme.dark(this)?"☀":"☾",25,
+                STheme.MINT,true);
+        switchTheme.setGravity(Gravity.CENTER);
+        switchTheme.setContentDescription("Switch light or dark theme");
+        switchTheme.setBackground(STheme.rounded(STheme.cardColor(this),16,this));
+        row.addView(switchTheme,new LinearLayout.LayoutParams(STheme.dp(this,49),STheme.dp(this,49)));
+        switchTheme.setOnClickListener(v->{
+            STheme.setDark(this,!STheme.dark(this));
+            recreate();
+        });
+        parent.addView(row);
+    }
+
+    private void hero(LinearLayout parent) {
+        LinearLayout card=STheme.column(this);
+        card.setPadding(STheme.dp(this,22),STheme.dp(this,20),
+                STheme.dp(this,22),STheme.dp(this,20));
+        card.setBackground(STheme.gradient(this,0xFF153B55,0xFF0A233B,30));
+        TextView heading=STheme.text(this,"DEVICE STORAGE",12,0xFF9CECD9,true);
+        card.addView(heading);
+        STheme.space(this,card,4);
+        card.addView(STheme.text(this,"Everything at a glance",20,Color.WHITE,true));
+        ring=new StorageRingView(this);
+        card.addView(ring,new LinearLayout.LayoutParams(-1,STheme.dp(this,216)));
+        storageCaption=STheme.text(this,"Loading device storage…",12,0xFFC6DFE2,false);
+        storageCaption.setGravity(Gravity.CENTER);
+        card.addView(storageCaption);
+        STheme.space(this,card,18);
+        LinearLayout stats=STheme.row(this);
+        LinearLayout left=stat("AVAILABLE", "—");
+        LinearLayout right=stat("IN USE", "—");
+        available=(TextView)left.getChildAt(1);
+        occupied=(TextView)right.getChildAt(1);
+        stats.addView(left,new LinearLayout.LayoutParams(0,-2,1));
+        View separator=new View(this);
+        separator.setBackgroundColor(0xFF275267);
+        stats.addView(separator,new LinearLayout.LayoutParams(STheme.dp(this,1),STheme.dp(this,48)));
+        stats.addView(right,new LinearLayout.LayoutParams(0,-2,1));
+        card.addView(stats);
+        parent.addView(card);
+    }
+
+    private LinearLayout stat(String title,String number) {
+        LinearLayout result=STheme.column(this);
+        TextView first=STheme.text(this,title,11,0xFF8FC5C8,true);
+        first.setGravity(Gravity.CENTER);
+        result.addView(first);
+        TextView second=STheme.text(this,number,20,Color.WHITE,true);
+        second.setGravity(Gravity.CENTER);
+        result.addView(second);
+        return result;
+    }
+
+    private void action(LinearLayout parent) {
+        LinearLayout card=STheme.panel(this);
+        LinearLayout row=STheme.row(this);
+        TextView symbol=STheme.text(this,"✦",22,STheme.MINT,true);
+        row.addView(symbol);
+        TextView title=STheme.text(this,"  One-Tap Safe Cleanup",17,STheme.text(this),true);
+        row.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        card.addView(row);
+        STheme.space(this,card,7);
+        card.addView(STheme.text(this,
+                "Instantly remove S Cleaner's temporary cache. Personal files are never included.",
+                13,STheme.secondary(this),false));
+        STheme.space(this,card,11);
+        cacheLabel=STheme.text(this,"App cache: checking…",13,STheme.MINT,true);
+        card.addView(cacheLabel);
+        STheme.space(this,card,14);
+        cleanBtn=STheme.pill(this,"✦   CLEAN SAFELY",true);
+        card.addView(cleanBtn);
+        cleanBtn.setOnClickListener(v->cleanOwn());
+        parent.addView(card);
+    }
+
+    private void toolRow(LinearLayout page, String i1,String t1,String s1,Runnable a1,
+                         String i2,String t2,String s2,Runnable a2) {
+        LinearLayout row=STheme.row(this);
+        View first=toolCard(i1,t1,s1,a1);
+        View second=toolCard(i2,t2,s2,a2);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,STheme.dp(this,158),1);
+        lp.rightMargin=STheme.dp(this,6);
+        row.addView(first,lp);
+        LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(0,STheme.dp(this,158),1);
+        rp.leftMargin=STheme.dp(this,6);
+        row.addView(second,rp);
+        page.addView(row);
+        STheme.space(this,page,12);
+    }
+
+    private View toolCard(String icon,String name,String sub,Runnable action) {
+        LinearLayout card=STheme.column(this);
+        card.setPadding(STheme.dp(this,15),STheme.dp(this,15),
+                STheme.dp(this,13),STheme.dp(this,13));
+        card.setBackground(STheme.rounded(STheme.cardColor(this),22,this));
+        if(!STheme.dark(this))card.setElevation(STheme.dp(this,2));
+        FrameLayout emblem=new FrameLayout(this);
+        emblem.setBackground(STheme.rounded(STheme.iconBg(this),12,this));
+        STheme.Icon iconView=new STheme.Icon(this,icon);
+        FrameLayout.LayoutParams iLp=new FrameLayout.LayoutParams(
+                STheme.dp(this,32),STheme.dp(this,32),Gravity.CENTER);
+        emblem.addView(iconView,iLp);
+        card.addView(emblem,new LinearLayout.LayoutParams(STheme.dp(this,48),STheme.dp(this,48)));
+        STheme.space(this,card,10);
+        TextView title=STheme.text(this,name,15,STheme.text(this),true);
+        title.setMaxLines(1);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        card.addView(title);
+        STheme.space(this,card,3);
+        TextView description=STheme.text(this,sub,12,STheme.secondary(this),false);
+        description.setMaxLines(2);
+        card.addView(description);
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setContentDescription(name+". "+sub);
+        card.setOnClickListener(v->action.run());
+        return card;
+    }
+
+    private void updateUsage() {
+        long[] values=CacheTools.storage();
+        long total=values[0], free=values[1];
+        if(total>0) {
+            free=Math.min(total,Math.max(0,free));
+            long used=total-free;
+            if(ring!=null)ring.setPercent(used*100d/total);
+            available.setText(Formatter.formatFileSize(this,free));
+            occupied.setText(Formatter.formatFileSize(this,used));
+            storageCaption.setText(Formatter.formatFileSize(this,total)+" TOTAL CAPACITY");
+            monitorText.setText(Formatter.formatFileSize(this,free)+" free of "+
+                    Formatter.formatFileSize(this,total)+" • refreshed while the app is visible");
         }
-        refreshOwn();
+        refreshCache();
     }
 
-    private void refreshOwn() {
-        if (cleaning) return;
-        work.execute(() -> {
-            long amount = CacheTools.scanOrClean(getApplicationContext(), false);
-            ui.post(() -> {
-                if (!isFinishing() && !isDestroyed() && !cleaning && appCache != null) {
-                    appCache.setText(getString(R.string.cache_size, CacheTools.size(this, amount)));
-                }
+    private void refreshCache() {
+        if(cleanupBusy)return;
+        executor.execute(()->{
+            long bytes=CacheTools.scanOrClean(getApplicationContext(),false);
+            ui.post(()->{
+                if(!isFinishing()&&!isDestroyed()&&!cleanupBusy&&cacheLabel!=null)
+                    cacheLabel.setText("App cache: "+Formatter.formatFileSize(this,bytes));
             });
         });
     }
 
-    private void clearOwn() {
-        if (cleaning) return;
-        cleaning = true;
-        cleanButton.setEnabled(false);
-        cleanButton.setAlpha(0.6f);
-        cleanButton.setText(R.string.cleaning);
-        work.execute(() -> {
-            long cleared = CacheTools.scanOrClean(getApplicationContext(), true);
-            ui.post(() -> {
-                if (isFinishing() || isDestroyed()) return;
-                cleaning = false;
-                cleanButton.setEnabled(true);
-                cleanButton.setAlpha(1f);
-                cleanButton.setText(R.string.clean_now);
-                Toast.makeText(this, cleared == 0 ? getString(R.string.nothing_to_clean)
-                        : getString(R.string.cleaned, CacheTools.size(this, cleared)),
-                        Toast.LENGTH_LONG).show();
-                onResume();
+    private void cleanOwn() {
+        if(cleanupBusy)return;
+        cleanupBusy=true;
+        cleanBtn.setEnabled(false);
+        cleanBtn.setAlpha(.6f);
+        cleanBtn.setText("CLEANING TEMPORARY FILES…");
+        executor.execute(()->{
+            long cleared=CacheTools.scanOrClean(getApplicationContext(),true);
+            ui.post(()->{
+                if(isFinishing()||isDestroyed())return;
+                cleanupBusy=false;
+                cleanBtn.setEnabled(true);cleanBtn.setAlpha(1f);
+                cleanBtn.setText("✦   CLEAN SAFELY");
+                Toast.makeText(this,cleared>0
+                        ? "Safe cleanup: "+Formatter.formatFileSize(this,cleared)+" freed"
+                        : "Already clear — no temporary cache to remove",Toast.LENGTH_LONG).show();
+                updateUsage();
             });
         });
     }
 
-    private void launchStorage() {
-        Intent intent = new Intent(Build.VERSION.SDK_INT >= 25 ?
-                StorageManager.ACTION_MANAGE_STORAGE : Settings.ACTION_INTERNAL_STORAGE_SETTINGS);
-        launch(intent, new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS));
+    private void openReview(String mode) {
+        Intent i=new Intent(this,ReviewActivity.class);
+        i.putExtra(ReviewActivity.EXTRA_MODE,mode);
+        startActivity(i);
     }
-
-    private void launchDownloads() {
-        Intent intent = new Intent(DownloadManager.ACTION_VIEW_DOWNLOADS);
-        Intent fallback = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        fallback.setType("*/*");
-        fallback.addCategory(Intent.CATEGORY_OPENABLE);
-        launch(intent, fallback);
+    private void openStorage() {
+        Intent preferred=new Intent(Build.VERSION.SDK_INT>=25?
+                StorageManager.ACTION_MANAGE_STORAGE:Settings.ACTION_INTERNAL_STORAGE_SETTINGS);
+        try{startActivity(preferred);}
+        catch(RuntimeException e) {
+            try{startActivity(new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS));}
+            catch(RuntimeException ignored){Toast.makeText(this,"Storage settings unavailable",
+                    Toast.LENGTH_SHORT).show();}
+        }
     }
-
-    private void launch(Intent intent, Intent fallback) {
-        try { startActivity(intent); }
-        catch (RuntimeException e) {
-            try { startActivity(fallback); }
-            catch (RuntimeException ignored) {
-                Toast.makeText(this, R.string.error_settings, Toast.LENGTH_SHORT).show();
+    private void openDownloads() {
+        try{startActivity(new Intent(DownloadManager.ACTION_VIEW_DOWNLOADS));}
+        catch(RuntimeException e) {
+            try{
+                Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                picker.setType("*/*");
+                picker.addCategory(Intent.CATEGORY_OPENABLE);
+                startActivity(picker);
+            }catch(RuntimeException ignored){
+                Toast.makeText(this,"Downloads unavailable",Toast.LENGTH_SHORT).show();
             }
         }
     }
 
-    private LinearLayout panel(int color) {
-        LinearLayout result = new LinearLayout(this);
-        result.setOrientation(LinearLayout.VERTICAL);
-        result.setPadding(dp(18), dp(18), dp(18), dp(18));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(color);
-        bg.setCornerRadius(dp(20));
-        result.setBackground(bg);
-        result.setElevation(dp(2));
-        return result;
+    @Override protected void onResume() {
+        super.onResume();
+        active=true;
+        ui.removeCallbacks(monitor);
+        monitor.run();
     }
-
-    private TextView text(String s, int sp, int color, boolean bold) {
-        TextView v = new TextView(this);
-        v.setText(s);
-        v.setTextSize(sp);
-        v.setTextColor(color);
-        if (bold) v.setTypeface(null, 1);
-        v.setGravity(Gravity.CENTER_VERTICAL);
-        return v;
+    @Override protected void onPause() {
+        active=false;
+        ui.removeCallbacks(monitor);
+        super.onPause();
     }
-
-    private TextView button(String s, int color, int foreground) {
-        TextView v = text(s, 15, foreground, true);
-        v.setGravity(Gravity.CENTER);
-        v.setMinHeight(dp(50));
-        v.setPadding(dp(12), dp(12), dp(12), dp(12));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(color);
-        bg.setCornerRadius(dp(14));
-        v.setBackground(bg);
-        return v;
-    }
-    private void space(LinearLayout parent, int d) {
-        View spacer = new View(this);
-        parent.addView(spacer, new LinearLayout.LayoutParams(1, dp(d)));
-    }
-    private int dp(float d) { return Math.round(getResources().getDisplayMetrics().density * d); }
     @Override protected void onDestroy() {
-        work.shutdown();
+        executor.shutdownNow();
         super.onDestroy();
     }
 }

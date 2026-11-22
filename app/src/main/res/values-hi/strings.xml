@@ -1,30 +1,4 @@
 <resources>
-    <string name="app_name">S Cache Cleaner</string>
-    <string name="tagline">स्मार्ट स्टोरेज • सुरक्षित सफाई</string>
-    <string name="privacy">न विज्ञापन · न ट्रैकिंग</string>
-    <string name="storage_title">डिवाइस स्टोरेज</string>
-    <string name="free">खाली</string>
-    <string name="used">इस्तेमाल</string>
-    <string name="cache_title">सुरक्षित क्विक क्लीन</string>
-    <string name="cache_description">केवल S Cache Cleaner की अस्थायी फाइलें हटेंगी। फोटो, चैट और निजी फाइलें सुरक्षित रहेंगी।</string>
-    <string name="cache_size">ऐप Cache: %1$s</string>
-    <string name="clean_now">ऐप Cache साफ करें</string>
-    <string name="cleaning">साफ हो रहा है…</string>
-    <string name="cleaned">इस ऐप के Cache से %1$s हटाया गया।</string>
-    <string name="nothing_to_clean">अभी इस ऐप का कोई Cache साफ नहीं करना है।</string>
-    <string name="other_apps">दूसरे ऐप्स का Cache</string>
-    <string name="other_apps_desc">ऐप चुनकर Android Settings खोलें। फिर Storage &amp; cache → Clear cache दबाएँ।</string>
-    <string name="browse_apps">इंस्टॉल किए हुए ऐप्स देखें</string>
-    <string name="tools_title">स्टोरेज टूल</string>
-    <string name="storage_settings">स्टोरेज मैनेजर खोलें</string>
-    <string name="downloads">डाउनलोड की फाइलें देखें</string>
-    <string name="safety_title">आपकी फाइलें सुरक्षित</string>
-    <string name="safety_desc">Android सामान्य ऐप्स को दूसरे सभी ऐप्स का Cache बिना अनुमति हटाने नहीं देता। दूसरे ऐप्स का Cache Settings में जाकर साफ करें।</string>
-    <string name="compatibility">Android 6.0+ • विकल्प डिवाइस के अनुसार बदल सकते हैं।</string>
-    <string name="apps_title">इंस्टॉल किए गए ऐप्स</string>
-    <string name="search_apps">ऐप का नाम खोजें</string>
-    <string name="apps_help">ऐप चुनें, Storage &amp; cache खोलें और Clear cache दबाएँ। Clear storage दबाने से ऐप रीसेट हो सकता है।</string>
-    <string name="apps_count">%1$d ऐप</string>
-    <string name="error_settings">इस डिवाइस की Settings नहीं खुल पाईं।</string>
-    <string name="empty_apps">कोई ऐप नहीं मिला</string>
+    <string name="app_name">S Cleaner</string>
+    <string name="app_tagline">आपकी प्राइवेसी, आपकी पसंद।</string>
 </resources>
