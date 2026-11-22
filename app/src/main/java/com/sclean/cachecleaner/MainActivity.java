@@ -50,6 +50,11 @@ public final class MainActivity extends Activity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         drawPage();
+        if(getIntent()!=null && getIntent().getBooleanExtra("open_system_cache",false)) {
+            // Explicitly requested from App Manager: show Android's cache confirmation flow.
+            getIntent().removeExtra("open_system_cache");
+            ui.post(this::openSystemCache);
+        }
     }
 
     private void drawPage() {
@@ -151,7 +156,7 @@ public final class MainActivity extends Activity {
                 12,STheme.secondary(this),false));
         page.addView(privacy);
         STheme.space(this,page,19);
-        TextView footer=STheme.text(this,"S CLEANER  •  VERSION 2.1  •  MADE FOR ANDROID",
+        TextView footer=STheme.text(this,"S CLEANER  •  VERSION 2.3  •  MADE FOR ANDROID",
                 11,STheme.secondary(this),true);
         footer.setGravity(Gravity.CENTER);
         page.addView(footer);

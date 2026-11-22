@@ -24,3 +24,10 @@ The app requests optional `MANAGE_EXTERNAL_STORAGE` for core shared-storage scan
 
 ## Development
 GitHub Actions -> Build S Cleaner Android APK -> successful run -> download `S-Cleaner-v2.2-Debug-APK` artifact.
+
+## v2.3: Per-app cache access — Android-compliant
+- App Manager makes the official Android **App Info → Storage & cache → Clear cache** route clearer for every launchable app.
+- **All Apps & System Apps** opens Android's complete app list, including apps hidden from S Cleaner's launchable-app list.
+- **Clear supported external caches** opens the Android-provided confirmation flow if supported (Android 11+ with special all-files access, user-approved). It does **not** delete every app's internal/private cache.
+- No misleading claims, hidden accessibility actions, root, privileged permissions, or data deletion without your confirmation.
+- Installing this build does not grant S Cleaner direct access to the private cache of every app; Android reserves that capability for privileged system tools.

@@ -59,16 +59,38 @@ public final class AppsActivity extends Activity {
         heading.addView(STheme.text(this," App Manager",24,STheme.text(this),true));
         root.addView(heading);
         STheme.space(this,root,8);
-        root.addView(STheme.text(this,"Installed launchable apps. Open their official Android settings to clear individual caches.",
+        root.addView(STheme.text(this,"Choose an app below to open its Android App Info → Storage & cache → Clear cache. System apps and unlisted apps are available through All Apps Settings.",
                 13,STheme.secondary(this),false));
         STheme.space(this,root,8);
         LinearLayout tip=STheme.panel(this);
         tip.addView(STheme.text(this,"ANDROID SAFE MODE",11,STheme.MINT,true));
         STheme.space(this,tip,5);
         tip.addView(STheme.text(this,
-                "Tap an app → Storage & cache → Clear cache. Avoid Clear storage, which can remove saved app data.",
+                "Android protects each app's private cache. We cannot erase it automatically. Tap an app, then select Storage & cache → Clear cache in system settings. NEVER tap Clear storage unless you want to reset the app.",
                 13,STheme.text(this),false));
         root.addView(tip);
+        STheme.space(this,root,12);
+
+        TextView allApps=STheme.pill(this,"◎  ALL APPS & SYSTEM APPS (ANDROID)",true);
+        root.addView(allApps);
+        allApps.setOnClickListener(v->{
+            try {
+                startActivity(new Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS));
+            } catch (RuntimeException error) {
+                try { startActivity(new Intent(Settings.ACTION_SETTINGS)); }
+                catch (RuntimeException ignored) {
+                    Toast.makeText(this,"Android app settings unavailable",Toast.LENGTH_LONG).show();
+                }
+            }
+        });
+        STheme.space(this,root,8);
+        TextView externalCaches=STheme.pill(this,"✦  CLEAR SUPPORTED EXTERNAL CACHES",false);
+        root.addView(externalCaches);
+        externalCaches.setOnClickListener(v->{
+            Intent intent=new Intent(this,MainActivity.class);
+            intent.putExtra("open_system_cache",true);
+            startActivity(intent);
+        });
         STheme.space(this,root,16);
 
         search=new EditText(this);
@@ -176,7 +198,7 @@ public final class AppsActivity extends Activity {
         for(Entry e:apps)if(query.isEmpty() ||
                 e.name.toLowerCase(Locale.ROOT).contains(query) ||
                 e.pkg.toLowerCase(Locale.ROOT).contains(query))filtered.add(e);
-        count.setText(filtered.size()+" apps available");
+        count.setText(filtered.size()+" launchable apps shown • Android Settings for the complete list");
         if(adapter!=null)adapter.notifyDataSetChanged();
     }
 
