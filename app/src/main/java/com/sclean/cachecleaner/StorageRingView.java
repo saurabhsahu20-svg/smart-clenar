@@ -79,7 +79,7 @@ final class StorageRingView extends View {
         p.setStyle(Paint.Style.FILL);
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(Color.WHITE);
-        p.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 1));
+        p.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD));
         p.setTextSize(34*density);
         canvas.drawText(String.format(java.util.Locale.US,"%.0f%%",animated),
                 cx,cy+4*density,p);
