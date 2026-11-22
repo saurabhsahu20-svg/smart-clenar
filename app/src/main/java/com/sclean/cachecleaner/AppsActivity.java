@@ -1,6 +1,10 @@
 package com.sclean.cachecleaner;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.os.Build;
+import android.os.Environment;
+import android.os.storage.StorageManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -43,9 +47,15 @@ public final class AppsActivity extends Activity {
     private TextView count;
     private EditText search;
     private PackageManager pm;
+    private static final int SYSTEM_EXTERNAL_CACHE_REQUEST = 201;
+    private boolean returnFromPermissionSettings = false;
+    private boolean askedForCache = false;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        if(state!=null) {
+            returnFromPermissionSettings=state.getBoolean("pending_permission",false);
+        }
         pm=getPackageManager();
         LinearLayout root=STheme.column(this);
         root.setBackgroundColor(STheme.bg(this));
@@ -59,14 +69,14 @@ public final class AppsActivity extends Activity {
         heading.addView(STheme.text(this," App Manager",24,STheme.text(this),true));
         root.addView(heading);
         STheme.space(this,root,8);
-        root.addView(STheme.text(this,"Choose an app below to open its Android App Info → Storage & cache → Clear cache. System apps and unlisted apps are available through All Apps Settings.",
+        root.addView(STheme.text(this,"Android protects apps' private cache. Use the system-wide external-cache cleanup below or select any app to clear its internal cache manually in Android Settings.",
                 13,STheme.secondary(this),false));
         STheme.space(this,root,8);
         LinearLayout tip=STheme.panel(this);
         tip.addView(STheme.text(this,"ANDROID SAFE MODE",11,STheme.MINT,true));
         STheme.space(this,tip,5);
         tip.addView(STheme.text(this,
-                "Android protects each app's private cache. We cannot erase it automatically. Tap an app, then select Storage & cache → Clear cache in system settings. NEVER tap Clear storage unless you want to reset the app.",
+                "Granting All files access does NOT unlock other apps' private cache. Android can clear supported external caches after you approve its system dialog. For remaining internal cache, open the app's Storage & cache screen. Avoid Clear storage; it resets app data.",
                 13,STheme.text(this),false));
         root.addView(tip);
         STheme.space(this,root,12);
@@ -84,13 +94,9 @@ public final class AppsActivity extends Activity {
             }
         });
         STheme.space(this,root,8);
-        TextView externalCaches=STheme.pill(this,"✦  CLEAR SUPPORTED EXTERNAL CACHES",false);
+        TextView externalCaches=STheme.pill(this,"✦  CLEAN SUPPORTED APP CACHES",true);
         root.addView(externalCaches);
-        externalCaches.setOnClickListener(v->{
-            Intent intent=new Intent(this,MainActivity.class);
-            intent.putExtra("open_system_cache",true);
-            startActivity(intent);
-        });
+        externalCaches.setOnClickListener(v->openSystemCacheDialog());
         STheme.space(this,root,16);
 
         search=new EditText(this);
@@ -198,8 +204,96 @@ public final class AppsActivity extends Activity {
         for(Entry e:apps)if(query.isEmpty() ||
                 e.name.toLowerCase(Locale.ROOT).contains(query) ||
                 e.pkg.toLowerCase(Locale.ROOT).contains(query))filtered.add(e);
-        count.setText(filtered.size()+" launchable apps shown • Android Settings for the complete list");
+        count.setText(filtered.size()+" app shortcuts • Android All Apps includes system apps");
         if(adapter!=null)adapter.notifyDataSetChanged();
+    }
+
+
+    private void openSystemCacheDialog() {
+        if(Build.VERSION.SDK_INT<30) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Clear cache for each app")
+                    .setMessage("This Android version doesn't offer a system-wide external cache confirmation screen. Use the app list below or All Apps & System Apps to clear cache from each app's settings.")
+                    .setPositiveButton("OK",null).show();
+            return;
+        }
+        if(!Environment.isExternalStorageManager()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Storage access needed")
+                    .setMessage("Android requires optional All files access to request its external-app-cache cleanup dialog. This access does NOT allow direct deletion of other apps' internal cache. No personal files are selected or deleted here.")
+                    .setNegativeButton("Cancel",null)
+                    .setPositiveButton("Open permission settings",(d,w)->requestStoragePermission())
+                    .show();
+            return;
+        }
+        launchCacheConfirmation();
+    }
+
+    private void requestStoragePermission() {
+        if(Build.VERSION.SDK_INT<30)return;
+        returnFromPermissionSettings=true;
+        try {
+            startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:"+getPackageName())));
+        } catch(RuntimeException e) {
+            try {
+                startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+            } catch(RuntimeException ignored) {
+                returnFromPermissionSettings=false;
+                Toast.makeText(this,"Storage access settings unavailable",Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
+    private void launchCacheConfirmation() {
+        new AlertDialog.Builder(this)
+                .setTitle("Request Android cache cleanup?")
+                .setMessage("The next screen is Android's own confirmation. It can clear supported external-cache folders across apps, not the apps' protected internal cache. You must approve there too.")
+                .setNegativeButton("Cancel",null)
+                .setPositiveButton("Continue",(d,w)->{
+                    try {
+                        Intent request=new Intent(StorageManager.ACTION_CLEAR_APP_CACHE);
+                        startActivityForResult(request,SYSTEM_EXTERNAL_CACHE_REQUEST);
+                    } catch (RuntimeException error) {
+                        new AlertDialog.Builder(this)
+                                .setTitle("System cleanup not available")
+                                .setMessage("This Android device does not provide the external-cache cleanup dialog. Open individual app settings to clear its cache.")
+                                .setPositiveButton("OK",null).show();
+                    }
+                }).show();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if(returnFromPermissionSettings) {
+            returnFromPermissionSettings=false;
+            if(Build.VERSION.SDK_INT>=30 && Environment.isExternalStorageManager()) {
+                // Permission was granted in Android Settings. Continue with the user-approved system dialog.
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(this::launchCacheConfirmation);
+            } else {
+                Toast.makeText(this,"Permission not granted; no cache was deleted",Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    @Override protected void onActivityResult(int request,int result,Intent data) {
+        super.onActivityResult(request,result,data);
+        if(request!=SYSTEM_EXTERNAL_CACHE_REQUEST)return;
+        if(result==RESULT_OK) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Android cleanup completed")
+                    .setMessage("Android reports that supported external app caches were cleared. Remaining internal/private app cache must still be cleared from each app's own Settings.")
+                    .setPositiveButton("OK",null).show();
+        } else if(result==RESULT_CANCELED) {
+            Toast.makeText(this,"Cache cleanup canceled; no success was reported",Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(this,"Android reported a cache cleanup error",Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override protected void onSaveInstanceState(Bundle out) {
+        out.putBoolean("pending_permission",returnFromPermissionSettings);
+        super.onSaveInstanceState(out);
     }
 
     @Override protected void onDestroy(){

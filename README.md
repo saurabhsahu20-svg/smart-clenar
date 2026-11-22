@@ -31,3 +31,12 @@ GitHub Actions -> Build S Cleaner Android APK -> successful run -> download `S-C
 - **Clear supported external caches** opens the Android-provided confirmation flow if supported (Android 11+ with special all-files access, user-approved). It does **not** delete every app's internal/private cache.
 - No misleading claims, hidden accessibility actions, root, privileged permissions, or data deletion without your confirmation.
 - Installing this build does not grant S Cleaner direct access to the private cache of every app; Android reserves that capability for privileged system tools.
+
+## v2.4.0 — Cache management from App Manager
+
+- The **CLEAN SUPPORTED APP CACHES** button now opens Android's external-cache cleanup permission and confirmation **directly from App Manager** (Android 11+). No extra navigation through the S Cleaner dashboard.
+- Explains that All files access does **not** grant access to other apps' internal/private cache. Protected internal cache requires visiting each app's Android Storage & cache screen.
+- System cleanup displays a success message only on Android `RESULT_OK`; canceled or errored requests are reported honestly.
+- Re-checks permission when returning from Android settings. This option never silently deletes apps' user data or personal documents.
+
+Android does not offer a standard permission that gives an ordinary third-party app unrestricted deletion rights over every app's internal cache. `StorageManager.ACTION_CLEAR_APP_CACHE` handles only the system-supported **external** app caches after explicit Android confirmation. On some OEM builds the system UI may not be available.

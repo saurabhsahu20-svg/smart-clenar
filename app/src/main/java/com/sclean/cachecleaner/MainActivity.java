@@ -156,7 +156,7 @@ public final class MainActivity extends Activity {
                 12,STheme.secondary(this),false));
         page.addView(privacy);
         STheme.space(this,page,19);
-        TextView footer=STheme.text(this,"S CLEANER  •  VERSION 2.3  •  MADE FOR ANDROID",
+        TextView footer=STheme.text(this,"S CLEANER  •  VERSION 2.4  •  MADE FOR ANDROID",
                 11,STheme.secondary(this),true);
         footer.setGravity(Gravity.CENTER);
         page.addView(footer);
