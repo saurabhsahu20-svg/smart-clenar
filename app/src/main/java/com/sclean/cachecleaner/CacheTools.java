@@ -64,7 +64,7 @@ final class CacheTools {
                 }
             }
             if (clean) {
-                directories.sort((a, b) -> Integer.compare(
+                java.util.Collections.sort(directories, (a, b) -> Integer.compare(
                         b.getAbsolutePath().length(), a.getAbsolutePath().length()));
                 for (File dir : directories) dir.delete();
             }

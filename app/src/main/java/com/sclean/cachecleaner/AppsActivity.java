@@ -23,6 +23,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -159,7 +160,7 @@ public final class AppsActivity extends Activity {
                 catch(RuntimeException error){name=pkg;}
                 collected.add(new Entry(name.toString(),pkg));
             }
-            collected.sort((a,b)->a.name.compareToIgnoreCase(b.name));
+            Collections.sort(collected,(a,b)->a.name.compareToIgnoreCase(b.name));
             runOnUiThread(()->{
                 if(isFinishing()||isDestroyed())return;
                 apps.clear();

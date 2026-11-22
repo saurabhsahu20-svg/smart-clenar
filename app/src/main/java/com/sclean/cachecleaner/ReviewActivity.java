@@ -46,7 +46,6 @@ public final class ReviewActivity extends Activity {
         super.onCreate(state);
         String requested=getIntent().getStringExtra(EXTRA_MODE);
         if (requested!=null) mode=requested;
-        selectedFolder=getPreferences(0).getString("ignored",null);
         selectedFolder=getSharedPreferences("s_cleaner",MODE_PRIVATE).getString("folder",null);
         buildUi();
         if(selectedFolder!=null) scanFolder();
@@ -114,7 +113,20 @@ public final class ReviewActivity extends Activity {
         fileList.setDividerHeight(0);
         fileList.setCacheColorHint(Color.TRANSPARENT);
         fileList.setBackground(STheme.rounded(STheme.cardColor(this),20,this));
-        adapter=new ArrayAdapter<>(this,android.R.layout.simple_list_item_multiple_choice,captions);
+        adapter=new ArrayAdapter<String>(this,android.R.layout.simple_list_item_multiple_choice,captions) {
+            @Override public View getView(int pos,View convertView,android.view.ViewGroup parent) {
+                View row=super.getView(pos,convertView,parent);
+                if(row instanceof android.widget.CheckedTextView) {
+                    android.widget.CheckedTextView label=(android.widget.CheckedTextView)row;
+                    label.setTextColor(STheme.text(ReviewActivity.this));
+                    label.setTextSize(13);
+                    label.setPadding(STheme.dp(ReviewActivity.this,14),
+                            STheme.dp(ReviewActivity.this,8),STheme.dp(ReviewActivity.this,14),
+                            STheme.dp(ReviewActivity.this,8));
+                }
+                return row;
+            }
+        };
         fileList.setAdapter(adapter);
         root.addView(fileList,new LinearLayout.LayoutParams(-1,0,1));
         fileList.setOnItemClickListener((a,b,pos,id)->updateSelection());

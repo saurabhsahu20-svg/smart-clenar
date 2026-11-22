@@ -134,7 +134,7 @@ final class FileScan {
                 if(cursor!=null)cursor.close();
             }
         }
-        output.large.sort((a,b)->Long.compare(b.bytes,a.bytes));
+        Collections.sort(output.large, (a,b)->Long.compare(b.bytes,a.bytes));
         findDuplicates(resolver,output);
         return output;
     }
@@ -168,7 +168,11 @@ final class FileScan {
     private static void findDuplicates(ContentResolver resolver, Result result) {
         Map<Long,List<Entry>> sameSize=new HashMap<>();
         for (Entry e:result.all) {
-            if (e.bytes>0) sameSize.computeIfAbsent(e.bytes, x->new ArrayList<>()).add(e);
+            if (e.bytes>0) {
+                List<Entry> bucket=sameSize.get(e.bytes);
+                if(bucket==null) { bucket=new ArrayList<>(); sameSize.put(e.bytes,bucket); }
+                bucket.add(e);
+            }
         }
         long hashed=0;
         for (Map.Entry<Long,List<Entry>> group:sameSize.entrySet()) {

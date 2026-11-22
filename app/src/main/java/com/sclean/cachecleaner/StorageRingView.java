@@ -23,7 +23,9 @@ final class StorageRingView extends View {
         setContentDescription("Storage usage visualization");
     }
     void setPercent(double value) {
-        percent = Math.min(100d, Math.max(0d, value));
+        double next=Math.min(100d, Math.max(0d, value));
+        if(Math.abs(percent-next)<.1d)return;
+        percent=next;
         if (animator != null) animator.cancel();
         animator = ValueAnimator.ofFloat((float)animated, (float)percent);
         animator.setDuration(820L);
