@@ -40,3 +40,6 @@ GitHub Actions -> Build S Cleaner Android APK -> successful run -> download `S-C
 - Re-checks permission when returning from Android settings. This option never silently deletes apps' user data or personal documents.
 
 Android does not offer a standard permission that gives an ordinary third-party app unrestricted deletion rights over every app's internal cache. `StorageManager.ACTION_CLEAR_APP_CACHE` handles only the system-supported **external** app caches after explicit Android confirmation. On some OEM builds the system UI may not be available.
+
+## Android emulator verification
+A separate GitHub Actions workflow **S Cleaner Emulator Safety Tests** runs instrumented tests on an Android 15 (API 35) emulator. It checks that the dashboard and App Manager open, that temporary files **inside S Cleaner** can be cleaned, and that S Cleaner's own persistent files remain untouched. This workflow cannot test real Lenovo Tab M11 hardware, permissions on specific OEM firmware, or automatic removal of other apps' protected internal cache. Manual device validation is still necessary.
